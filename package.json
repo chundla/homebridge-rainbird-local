@@ -1,0 +1,56 @@
+{
+  "name": "homebridge-rainbird-v2",
+  "displayName": "Rain Bird v2",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local Rain Bird controller plugin with HTTPS fallback for 2.x firmware",
+  "author": "Lux",
+  "license": "MIT",
+  "homepage": "https://github.com/chundla/homebridge-rainbird-v2#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chundla/homebridge-rainbird-v2.git"
+  },
+  "bugs": {
+    "url": "https://github.com/chundla/homebridge-rainbird-v2/issues"
+  },
+  "keywords": [
+    "homebridge-plugin",
+    "rainbird",
+    "irrigation"
+  ],
+  "main": "dist/index.js",
+  "engines": {
+    "node": ">=20.18.0",
+    "homebridge": "^1.8.0 || ^2.0.0-beta.0"
+  },
+  "scripts": {
+    "build": "rimraf ./dist && tsc && cp -R src/resources dist/resources",
+    "lint": "eslint . --max-warnings=0",
+    "prepublishOnly": "npm run lint && npm run build",
+    "watch": "npm run build && npm link && nodemon"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "config.schema.json"
+  ],
+  "dependencies": {
+    "homebridge-lib": "^7.1.12",
+    "undici": "^6.21.0",
+    "yaml": "^2.8.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@types/node": "^24.10.1",
+    "eslint": "^9.39.1",
+    "homebridge": "^2.0.0-beta.55",
+    "nodemon": "^3.1.11",
+    "rimraf": "^6.1.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.4"
+  }
+}

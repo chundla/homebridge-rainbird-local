@@ -1,0 +1,134 @@
+---
+- device_id: "0003"
+  code: ESP_RZXe
+  name: ESP-RZXe
+  supports_water_budget: false
+  max_programs: 0
+  max_run_times: 6
+  max_stations: 8
+  retries: true
+
+- device_id: "0007"
+  code: ESP_ME
+  name: ESP-Me
+  supports_water_budget: true
+  max_programs: 4
+  max_run_times: 6
+  max_stations: 22
+  retries: true
+
+- device_id: "0006"
+  code: ST8X_WF
+  name: ST8x-WiFi
+  supports_water_budget: false
+  max_programs: 0
+  max_run_times: 6
+  max_stations: 8
+
+- device_id: "0005"
+  code: ESP_TM2
+  name: ESP-TM2
+  supports_water_budget: true
+  max_programs: 3
+  max_run_times: 4
+  max_stations: 12
+
+- device_id: "0008"
+  code: ST8X_WF2
+  name: ST8x-WiFi2
+  supports_water_budget: false
+  max_programs: 8
+  max_run_times: 6
+  max_stations: 8
+
+- device_id: "0009"
+  code: ESP_ME3
+  name: ESP-ME3
+  supports_water_budget: true
+  max_programs: 4
+  max_run_times: 6
+  max_stations: 22
+  retries: true
+
+- device_id: "0010"
+  code: MOCK_ESP_ME2
+  name: ESP=Me2
+  supports_water_budget: true
+  max_programs: 4
+  max_run_times: 6
+  max_stations: 22
+  retries: true
+
+- device_id: "000a"
+  code: ESP_TM2v2
+  name: ESP-TM2
+  supports_water_budget: true
+  max_programs: 3
+  max_run_times: 4
+  max_stations: 12
+
+- device_id: "010a"
+  code: ESP_TM2v3
+  name: ESP-TM2
+  supports_water_budget: true
+  max_programs: 3
+  max_run_times: 4
+  max_stations: 12
+
+- device_id: "0099"
+  code: TBOS_BT
+  name: TBOS-BT
+  supports_water_budget: true
+  max_programs: 3
+  max_run_times: 8
+  max_stations: 8
+
+- device_id: "0100"
+  code: TBOS_BT
+  name: TBOS-BT
+  supports_water_budget: true
+  max_programs: 3
+  max_run_times: 8
+  max_stations: 8
+
+- device_id: "0107"
+  code: ESP_MEv2
+  name: ESP-Me
+  supports_water_budget: true
+  max_programs: 4
+  max_run_times: 6
+  max_stations: 22
+  retries: true
+
+- device_id: "0103"
+  code: ESP_RZXe2
+  name: ESP-RZXe2
+  supports_water_budget: false
+  max_programs: 8
+  max_run_times: 6
+  max_stations: 8
+
+- device_id: "0812"
+  code: RC2
+  name: RC2
+  supports_water_budget: true
+  max_programs: 3
+  max_run_times: 4
+  max_stations: 12
+
+- device_id: "0813"
+  code: ARC8
+  name: ARC8
+  supports_water_budget: true
+  max_programs: 3
+  max_run_times: 4
+  max_stations: 12
+
+- device_id: "UNKNOWN"
+  code: UNKNOWN
+  name: Unknown
+  supports_water_budget: false
+  max_programs: 0
+  max_run_times: 0
+  max_stations: 0
+  retries: false
