@@ -6,79 +6,49 @@
     "type": "object",
     "properties": {
       "name": {
-        "title": "Name",
+        "title": "Plugin Name",
         "type": "string",
         "default": "Rain Bird"
-      },
-      "host": {
-        "title": "Controller IP/Host",
-        "type": "string",
-        "description": "Local IP or hostname of the LNK Wi-Fi module (no http/https)."
-      },
-      "password": {
-        "title": "Controller Password",
-        "type": "string",
-        "description": "Rain Bird controller password set in the app.",
-        "format": "password"
-      },
-      "expose": {
-        "title": "Expose Mode",
-        "type": "string",
-        "default": "controller",
-        "enum": ["controller", "zones"],
-        "description": "Expose a single Irrigation System accessory (controller) or one accessory per zone (zones)."
-      },
-      "zoneNames": {
-        "title": "Zone Names",
-        "type": "array",
-        "items": { "type": "string" },
-        "description": "Optional custom names for zones, index 0 = zone 1."
-      },
-      "defaultDurationMinutes": {
-        "title": "Default Zone Duration (minutes)",
-        "type": "integer",
-        "default": 10,
-        "minimum": 1,
-        "maximum": 240
-      },
-      "refreshIntervalSeconds": {
-        "title": "Refresh Interval (seconds)",
-        "type": "integer",
-        "default": 30,
-        "minimum": 10,
-        "maximum": 300
-      },
-      "programSwitches": {
-        "title": "Expose Program Switches",
-        "type": "boolean",
-        "default": false,
-        "description": "Create HomeKit switches to trigger controller programs."
-      },
-      "zoneSwitches": {
-        "title": "Expose Zone Switches",
-        "type": "boolean",
-        "default": true,
-        "description": "Create HomeKit switches for each zone when using controller mode. If Zone Valves is enabled, these are auto-pruned to avoid redundant tiles."
-      },
-      "zoneValves": {
-        "title": "Expose Zone Valves",
-        "type": "boolean",
-        "default": true,
-        "description": "Create HomeKit valve services for each zone when using controller mode (best Apple Home visibility)."
-      },
-      "logScheduleOnStart": {
-        "title": "Log Schedule on Start",
-        "type": "boolean",
-        "default": false,
-        "description": "Fetch and log schedule data at startup (read-only)."
       },
       "debug": {
         "title": "Verbose Debug Logging",
         "type": "boolean",
         "default": false,
-        "description": "Enable verbose Rain Bird request/response logging."
+        "description": "Plugin-level debug logging and Rain Bird request/response traces."
+      },
+      "devices": {
+        "title": "Devices",
+        "type": "array",
+        "description": "One or more Rain Bird controllers.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "configDevice": {
+              "title": "Device Name",
+              "type": "string",
+              "description": "Name shown in Homebridge/HomeKit for this controller."
+            },
+            "host": { "title": "Controller IP/Host", "type": "string" },
+            "password": { "title": "Controller Password", "type": "string", "format": "password" },
+            "expose": { "title": "Expose Mode", "type": "string", "enum": ["controller", "zones"], "default": "controller" },
+            "zoneNames": { "title": "Zone Names", "type": "array", "items": { "type": "string" } },
+            "ignoredZones": { "title": "Ignored Zones", "type": "array", "items": { "type": "integer", "minimum": 1 } },
+            "defaultDurationMinutes": { "title": "Default Zone Duration (minutes)", "type": "integer", "default": 10, "minimum": 1, "maximum": 240 },
+            "refreshIntervalSeconds": { "title": "Refresh Interval (seconds)", "type": "integer", "default": 30, "minimum": 10, "maximum": 300 },
+            "programSwitches": { "title": "Enable Program Switches", "type": "boolean", "default": false },
+            "programSwitchList": {
+              "title": "Program Switch List (A=1, B=2, C=3, D=4)",
+              "type": "array",
+              "items": { "type": "integer", "enum": [1, 2, 3, 4] }
+            },
+            "zoneSwitches": { "title": "Expose Zone Switches", "type": "boolean", "default": true },
+            "zoneValves": { "title": "Expose Zone Valves", "type": "boolean", "default": true },
+            "logScheduleOnStart": { "title": "Log Schedule on Start", "type": "boolean", "default": false }
+          },
+          "required": ["host", "password"]
+        }
       }
     },
-    "required": ["host", "password"]
+    "required": []
   }
 }

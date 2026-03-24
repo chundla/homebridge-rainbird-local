@@ -247,14 +247,19 @@ export class RainbirdAccessory {
         ? this.platform.Characteristic.LeakDetected.LEAK_DETECTED
         : this.platform.Characteristic.LeakDetected.LEAK_NOT_DETECTED));
 
-    const shouldExposeSwitches = Boolean(this.accessory.context.programSwitches);
+    const enabledPrograms = Array.isArray(this.accessory.context.programSwitches)
+      ? this.accessory.context.programSwitches as number[]
+      : (this.accessory.context.programSwitches ? [1, 2, 3, 4] : []);
+    const shouldExposeSwitches = enabledPrograms.length > 0;
     if (shouldExposeSwitches) {
-      const programs = [1, 2, 3, 4];
-      for (const program of programs) {
-        const name = `Program ${program}`;
+      for (const program of enabledPrograms) {
+        const letter = String.fromCharCode(64 + program);
+        const name = `Program ${letter}`;
         const subtype = `program-${program}`;
         const service = this.accessory.getServiceById(this.platform.Service.Switch, subtype)
           || this.accessory.addService(this.platform.Service.Switch, name, subtype);
+
+        service.setCharacteristic(this.platform.Characteristic.Name, name);
 
         service.getCharacteristic(this.platform.Characteristic.On)
           .onGet(() => false)
@@ -314,20 +319,29 @@ export class RainbirdAccessory {
       }
     }
 
-    this.pruneControllerServices(shouldExposeSwitches, shouldExposeZoneSwitches, shouldExposeZoneValves);
+    this.pruneControllerServices(enabledPrograms, shouldExposeZoneSwitches, shouldExposeZoneValves, this.zones);
   }
 
-  private pruneControllerServices(programSwitches: boolean, zoneSwitches: boolean, zoneValves: boolean): void {
+  private pruneControllerServices(programSwitches: number[], zoneSwitches: boolean, zoneValves: boolean, activeZones: number[]): void {
     for (const service of [...this.accessory.services]) {
       const subtype = service.subtype ?? '';
-      if (subtype.startsWith('program-') && !programSwitches) {
-        this.accessory.removeService(service);
+      if (subtype.startsWith('program-')) {
+        const program = Number(subtype.replace('program-', ''));
+        if (!programSwitches.includes(program)) {
+          this.accessory.removeService(service);
+        }
       }
-      if (subtype.startsWith('zone-switch-') && !zoneSwitches) {
-        this.accessory.removeService(service);
+      if (subtype.startsWith('zone-switch-')) {
+        const zone = Number(subtype.replace('zone-switch-', ''));
+        if (!zoneSwitches || !activeZones.includes(zone)) {
+          this.accessory.removeService(service);
+        }
       }
-      if (subtype.startsWith('zone-valve-') && !zoneValves) {
-        this.accessory.removeService(service);
+      if (subtype.startsWith('zone-valve-')) {
+        const zone = Number(subtype.replace('zone-valve-', ''));
+        if (!zoneValves || !activeZones.includes(zone)) {
+          this.accessory.removeService(service);
+        }
       }
       if (subtype === 'schedule') {
         this.accessory.removeService(service);

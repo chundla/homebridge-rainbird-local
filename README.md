@@ -31,27 +31,65 @@ npm link
 {
   "platform": "RainBirdLocal",
   "name": "Rain Bird",
-  "host": "192.168.1.55",
-  "password": "YOUR_RAINBIRD_PASSWORD",
-  "expose": "controller",
-  "zoneNames": ["Front Lawn", "Back Lawn", "Drip Beds"],
-  "defaultDurationMinutes": 10,
-  "refreshIntervalSeconds": 30,
-  "programSwitches": true,
-  "zoneValves": true,
-  "zoneSwitches": false,
-  "logScheduleOnStart": false,
-  "debug": false
+  "debug": false,
+  "devices": [
+    {
+      "configDevice": "Main Controller",
+      "host": "192.168.1.55",
+      "password": "YOUR_RAINBIRD_PASSWORD",
+      "expose": "controller",
+      "zoneNames": ["Front Lawn", "Back Lawn", "Drip Beds"],
+      "ignoredZones": [6],
+      "defaultDurationMinutes": 10,
+      "refreshIntervalSeconds": 30,
+      "programSwitches": true,
+      "programSwitchList": [1, 3],
+      "zoneValves": true,
+      "zoneSwitches": false,
+      "logScheduleOnStart": false
+    }
+  ]
 }
 ```
 
 ### Config notes
 
+- Plugin-level options: `platform`, `name`, `debug`, `_bridge`
+- Controller-level options are inside `devices[]`
+- `configDevice`: display name for that controller
 - `host`: controller IP/hostname only, no `http://` or `https://`
 - `password`: controller password from the Rain Bird app
 - `expose`:
-  - `controller`: single accessory, can trigger default zone or program switches
-  - `zones`: separate valve accessory for each detected zone
+  - `controller`: single accessory, can trigger default zone or selected program switches
+  - `zones`: separate valve accessory per zone
+- `ignoredZones`: zone numbers to hide/ignore entirely
+- `programSwitches`: boolean toggle to enable/disable program switches
+- `programSwitchList`: optional specific list like `[1,3]` (overrides `programSwitches`)
+
+## Multi-controller example
+
+```json
+{
+  "platform": "RainBirdLocal",
+  "devices": [
+    {
+      "configDevice": "Front Controller",
+      "host": "192.168.1.55",
+      "password": "PASS1",
+      "programSwitches": true,
+      "programSwitchList": [1, 2],
+      "ignoredZones": [6]
+    },
+    {
+      "configDevice": "Back Controller",
+      "host": "192.168.1.56",
+      "password": "PASS2",
+      "expose": "zones",
+      "zoneNames": ["Beds", "Garden", "Orchard"]
+    }
+  ]
+}
+```
 
 ## Accessory behavior
 
@@ -60,7 +98,7 @@ npm link
 - Exposes HomeKit `IrrigationSystem`
 - `Active = true` starts irrigation on first discovered zone using `defaultDurationMinutes`
 - `Active = false` sends stop irrigation
-- Optional Program 1-4 switches trigger manual program run
+- Optional Program A-D switches trigger manual program run
 - Optional zone switches provide quick on/off per zone (auto-disabled when zone valves are enabled to avoid redundant tiles)
 - Optional zone valves provide native Apple Home valve tiles (Active/In Use/Set Duration)
 
