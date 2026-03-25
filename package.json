@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Local Rain Bird controller plugin with HTTPS fallback for 2.x firmware",
-  "author": "Lux",
+  "author": "Chundla",
   "license": "MIT",
   "homepage": "https://github.com/chundla/homebridge-rainbird-v2#readme",
   "repository": {
@@ -38,8 +38,8 @@
     "config.schema.json"
   ],
   "dependencies": {
-    "homebridge-lib": "^7.1.12",
-    "undici": "^6.21.0",
+    "homebridge-lib": "^7.3.2",
+    "undici": "^6.24.1",
     "yaml": "^2.8.0"
   },
   "devDependencies": {
