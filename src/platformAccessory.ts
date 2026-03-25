@@ -7,6 +7,15 @@ type ProgramSwitch = {
   service: Service;
 };
 
+type ProgramBudgetService = {
+  program: number;
+  service: Service;
+  budget: number;
+  runtimeMinutes: number;
+  firstStartMinutes: number;
+  daysMask: number;
+};
+
 type ZoneSwitch = {
   zone: number;
   service: Service;
@@ -32,7 +41,12 @@ type CustomTypes = {
   CurrentZoneCharacteristic: CharacteristicCtor;
   CurrentRemainingRuntimeCharacteristic: CharacteristicCtor;
   QueueSummaryCharacteristic: CharacteristicCtor;
+  ProgramBudgetCharacteristic: CharacteristicCtor;
+  ProgramRuntimeMinutesCharacteristic: CharacteristicCtor;
+  ProgramFirstStartCharacteristic: CharacteristicCtor;
+  ProgramDaysMaskCharacteristic: CharacteristicCtor;
   QueueService: ServiceCtor;
+  ProgramService: ServiceCtor;
 };
 
 export class RainbirdAccessory {
@@ -160,6 +174,61 @@ export class RainbirdAccessory {
       }
     }
 
+    class ProgramBudgetCharacteristic extends hap.Characteristic {
+      static readonly UUID = '7c7efaf0-3191-48d1-a70d-70faac3f459a';
+      constructor() {
+        super('Program Water Budget', ProgramBudgetCharacteristic.UUID, {
+          format: hap.Formats.UINT16,
+          perms: [hap.Perms.PAIRED_READ, hap.Perms.PAIRED_WRITE, hap.Perms.NOTIFY],
+        });
+        this.setProps({
+          format: hap.Formats.UINT16,
+          unit: '%',
+          minValue: 0,
+          maxValue: 300,
+          minStep: 1,
+          perms: [hap.Perms.PAIRED_READ, hap.Perms.PAIRED_WRITE, hap.Perms.NOTIFY],
+        });
+        this.value = this.getDefaultValue();
+      }
+    }
+
+    class ProgramRuntimeMinutesCharacteristic extends hap.Characteristic {
+      static readonly UUID = 'd4799b01-a3f5-4b33-b831-7e3efee74bc6';
+      constructor() {
+        super('Program Total Runtime', ProgramRuntimeMinutesCharacteristic.UUID, {
+          format: hap.Formats.UINT16,
+          perms: [hap.Perms.PAIRED_READ, hap.Perms.NOTIFY],
+        });
+        this.setProps({ format: hap.Formats.UINT16, unit: 'min', minValue: 0, maxValue: 65535, minStep: 1, perms: [hap.Perms.PAIRED_READ, hap.Perms.NOTIFY] });
+        this.value = this.getDefaultValue();
+      }
+    }
+
+    class ProgramFirstStartCharacteristic extends hap.Characteristic {
+      static readonly UUID = '7c0221d5-4af2-4629-a12d-56cc031bb4f0';
+      constructor() {
+        super('Program First Start', ProgramFirstStartCharacteristic.UUID, {
+          format: hap.Formats.UINT16,
+          perms: [hap.Perms.PAIRED_READ, hap.Perms.NOTIFY],
+        });
+        this.setProps({ format: hap.Formats.UINT16, unit: 'min', minValue: 0, maxValue: 65535, minStep: 1, perms: [hap.Perms.PAIRED_READ, hap.Perms.NOTIFY] });
+        this.value = this.getDefaultValue();
+      }
+    }
+
+    class ProgramDaysMaskCharacteristic extends hap.Characteristic {
+      static readonly UUID = '4cf872a4-8f8c-4235-a782-00864adbe7f0';
+      constructor() {
+        super('Program Days Mask', ProgramDaysMaskCharacteristic.UUID, {
+          format: hap.Formats.UINT8,
+          perms: [hap.Perms.PAIRED_READ, hap.Perms.NOTIFY],
+        });
+        this.setProps({ format: hap.Formats.UINT8, minValue: 0, maxValue: 127, minStep: 1, perms: [hap.Perms.PAIRED_READ, hap.Perms.NOTIFY] });
+        this.value = this.getDefaultValue();
+      }
+    }
+
     class QueueService extends hap.Service {
       static readonly UUID = 'd4bfcde5-6c50-4acb-8a0f-f2e4033f7554';
       constructor(name: string, subtype?: string) {
@@ -172,6 +241,17 @@ export class RainbirdAccessory {
       }
     }
 
+    class ProgramService extends hap.Service {
+      static readonly UUID = 'd32f5b12-df8b-4731-a646-c0297d77ab6e';
+      constructor(name: string, subtype?: string) {
+        super(name, ProgramService.UUID, subtype);
+        this.addCharacteristic(ProgramBudgetCharacteristic as unknown as CharacteristicCtor);
+        this.addCharacteristic(ProgramRuntimeMinutesCharacteristic as unknown as CharacteristicCtor);
+        this.addCharacteristic(ProgramFirstStartCharacteristic as unknown as CharacteristicCtor);
+        this.addCharacteristic(ProgramDaysMaskCharacteristic as unknown as CharacteristicCtor);
+      }
+    }
+
     RainbirdAccessory.customTypes = {
       RainDelayCharacteristic: RainDelayCharacteristic as unknown as CharacteristicCtor,
       QueueNextZoneCharacteristic: QueueNextZoneCharacteristic as unknown as CharacteristicCtor,
@@ -179,7 +259,12 @@ export class RainbirdAccessory {
       CurrentZoneCharacteristic: CurrentZoneCharacteristic as unknown as CharacteristicCtor,
       CurrentRemainingRuntimeCharacteristic: CurrentRemainingRuntimeCharacteristic as unknown as CharacteristicCtor,
       QueueSummaryCharacteristic: QueueSummaryCharacteristic as unknown as CharacteristicCtor,
+      ProgramBudgetCharacteristic: ProgramBudgetCharacteristic as unknown as CharacteristicCtor,
+      ProgramRuntimeMinutesCharacteristic: ProgramRuntimeMinutesCharacteristic as unknown as CharacteristicCtor,
+      ProgramFirstStartCharacteristic: ProgramFirstStartCharacteristic as unknown as CharacteristicCtor,
+      ProgramDaysMaskCharacteristic: ProgramDaysMaskCharacteristic as unknown as CharacteristicCtor,
       QueueService: QueueService as unknown as ServiceCtor,
+      ProgramService: ProgramService as unknown as ServiceCtor,
     };
 
     return RainbirdAccessory.customTypes;
@@ -190,6 +275,7 @@ export class RainbirdAccessory {
   private valveService?: Service;
   private rainSensorService?: Service;
   private queueService?: Service;
+  private programBudgetServices: ProgramBudgetService[] = [];
   private programSwitches: ProgramSwitch[] = [];
   private zoneSwitches: ZoneSwitch[] = [];
   private zoneValves: ZoneValve[] = [];
@@ -434,6 +520,8 @@ export class RainbirdAccessory {
     const enabledPrograms = Array.isArray(this.accessory.context.programSwitches)
       ? this.accessory.context.programSwitches as number[]
       : (this.accessory.context.programSwitches ? [1, 2, 3, 4] : []);
+    this.setupProgramBudgetServices(enabledPrograms);
+
     const shouldExposeSwitches = enabledPrograms.length > 0;
     if (shouldExposeSwitches) {
       for (const program of enabledPrograms) {
@@ -506,6 +594,39 @@ export class RainbirdAccessory {
     this.pruneControllerServices(enabledPrograms, shouldExposeZoneSwitches, shouldExposeZoneValves, this.zones);
   }
 
+  private setupProgramBudgetServices(enabledPrograms: number[]): void {
+    const custom = RainbirdAccessory.getCustomTypes(this.platform);
+    this.programBudgetServices = [];
+
+    for (const program of enabledPrograms) {
+      const letter = String.fromCharCode(64 + program);
+      const name = `Program ${letter} Budget`;
+      const subtype = `program-budget-${program}`;
+      const service = this.accessory.getServiceById(custom.ProgramService, subtype)
+        || this.accessory.addService(custom.ProgramService, name, subtype);
+
+      service.setCharacteristic(this.platform.Characteristic.Name, name);
+      service.getCharacteristic(custom.ProgramBudgetCharacteristic)
+        .onGet(async () => this.getProgramBudget(program))
+        .onSet(async (value) => this.setProgramBudget(program, value));
+      service.getCharacteristic(custom.ProgramRuntimeMinutesCharacteristic)
+        .onGet(() => this.programBudgetServices.find((entry) => entry.program === program)?.runtimeMinutes ?? 0);
+      service.getCharacteristic(custom.ProgramFirstStartCharacteristic)
+        .onGet(() => this.programBudgetServices.find((entry) => entry.program === program)?.firstStartMinutes ?? 0);
+      service.getCharacteristic(custom.ProgramDaysMaskCharacteristic)
+        .onGet(() => this.programBudgetServices.find((entry) => entry.program === program)?.daysMask ?? 0);
+
+      this.programBudgetServices.push({
+        program,
+        service,
+        budget: 0,
+        runtimeMinutes: 0,
+        firstStartMinutes: 0,
+        daysMask: 0,
+      });
+    }
+  }
+
   private setupQueueService(): void {
     const custom = RainbirdAccessory.getCustomTypes(this.platform);
     this.queueService = this.accessory.getService(custom.QueueService)
@@ -532,7 +653,13 @@ export class RainbirdAccessory {
   private pruneControllerServices(programSwitches: number[], zoneSwitches: boolean, zoneValves: boolean, activeZones: number[]): void {
     for (const service of [...this.accessory.services]) {
       const subtype = service.subtype ?? '';
-      if (subtype.startsWith('program-')) {
+      if (subtype.startsWith('program-budget-')) {
+        const program = Number(subtype.replace('program-budget-', ''));
+        if (!programSwitches.includes(program)) {
+          this.accessory.removeService(service);
+        }
+      }
+      if (subtype.startsWith('program-') && !subtype.startsWith('program-budget-')) {
         const program = Number(subtype.replace('program-', ''));
         if (!programSwitches.includes(program)) {
           this.accessory.removeService(service);
@@ -654,6 +781,55 @@ export class RainbirdAccessory {
     this.log.info(`Starting Rain Bird program ${program}`);
     await this.controller.startProgram(program);
     this.log.debug(`Started Rain Bird program ${program}`);
+  }
+
+  private async getProgramBudget(program: number): Promise<number> {
+    const budget = await this.controller.getWaterBudget(program - 1);
+    const found = this.programBudgetServices.find((entry) => entry.program === program);
+    if (found) {
+      found.budget = budget;
+      const custom = RainbirdAccessory.getCustomTypes(this.platform);
+      found.service.updateCharacteristic(custom.ProgramBudgetCharacteristic, budget);
+    }
+    return budget;
+  }
+
+  private async setProgramBudget(program: number, value: CharacteristicValue): Promise<void> {
+    const budget = Math.max(0, Math.min(300, Number(value)));
+    await this.controller.setWaterBudget(program - 1, budget);
+    const found = this.programBudgetServices.find((entry) => entry.program === program);
+    if (found) {
+      found.budget = budget;
+      const custom = RainbirdAccessory.getCustomTypes(this.platform);
+      found.service.updateCharacteristic(custom.ProgramBudgetCharacteristic, budget);
+    }
+    this.log.info(`Set Program ${String.fromCharCode(64 + program)} water budget to ${budget}%`);
+  }
+
+  updateProgramMetadata(
+    schedule: {
+      programInfo: Array<Record<string, number>>;
+      programStartInfo: Array<Record<string, number>>;
+      durations: Array<{ zone: number; durations: number[] }>;
+    },
+  ): void {
+    const custom = RainbirdAccessory.getCustomTypes(this.platform);
+    for (const programService of this.programBudgetServices) {
+      const programZero = programService.program - 1;
+      const info = schedule.programInfo.find((entry) => Number(entry.program ?? -1) === programZero);
+      const start = schedule.programStartInfo.find((entry) => Number(entry.program ?? -1) === programZero);
+      const firstStart = Array.isArray(start?.startTime)
+        ? (start?.startTime as number[]).find((entry) => Number(entry) !== 65535)
+        : undefined;
+      const runtimeMinutes = schedule.durations.reduce((sum, zoneEntry) => sum + Number(zoneEntry.durations?.[programZero] ?? 0), 0);
+      programService.daysMask = Number(info?.daysOfWeekMask ?? 0);
+      programService.firstStartMinutes = Number(firstStart ?? 0);
+      programService.runtimeMinutes = runtimeMinutes;
+
+      programService.service.updateCharacteristic(custom.ProgramRuntimeMinutesCharacteristic, runtimeMinutes);
+      programService.service.updateCharacteristic(custom.ProgramFirstStartCharacteristic, programService.firstStartMinutes);
+      programService.service.updateCharacteristic(custom.ProgramDaysMaskCharacteristic, programService.daysMask);
+    }
   }
 
   private setZoneValveDuration(zone: number, value: CharacteristicValue): void {

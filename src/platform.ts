@@ -199,9 +199,10 @@ export class RainbirdPlatform implements DynamicPlatformPlugin {
         this.log.info(`[${runtime.name}] Ignoring zones: ${[...runtime.ignoredZones].sort((a, b) => a - b).join(',')}`);
       }
 
-      if (runtime.logScheduleOnStart || runtime.debug) {
+      let scheduleSnapshot: Awaited<ReturnType<RainbirdController['getSchedule']>> | undefined;
+      if (runtime.logScheduleOnStart || runtime.debug || runtime.programSwitches.length > 0) {
         try {
-          const scheduleSnapshot = await runtime.controller.getSchedule();
+          scheduleSnapshot = await runtime.controller.getSchedule();
           this.log.info(
             `[${runtime.name}] Schedule read succeeded (${scheduleSnapshot.programInfo.length} program definition(s), `
             + `${scheduleSnapshot.durations.length} zone duration set(s)).`,
@@ -224,7 +225,10 @@ export class RainbirdPlatform implements DynamicPlatformPlugin {
       this.controllers.push(runtime);
 
       if (runtime.exposeMode === 'controller') {
-        this.registerControllerAccessory(runtime);
+        const handler = this.registerControllerAccessory(runtime);
+        if (handler && scheduleSnapshot) {
+          handler.updateProgramMetadata(scheduleSnapshot);
+        }
       } else {
         this.registerZoneAccessories(runtime);
       }
@@ -407,6 +411,17 @@ export class RainbirdPlatform implements DynamicPlatformPlugin {
 
       runtime.refreshTick += 1;
       runtime.consecutiveRefreshFailures = 0;
+
+      let scheduleSnapshot: Awaited<ReturnType<RainbirdController['getSchedule']>> | undefined;
+      if (runtime.programSwitches.length > 0 && runtime.refreshTick % 20 === 1) {
+        try {
+          scheduleSnapshot = await runtime.controller.getSchedule();
+          this.logProgramMetadata(runtime.name, scheduleSnapshot);
+        } catch (err) {
+          this.log.debug(`[${runtime.name}] Schedule metadata refresh failed:`, err);
+        }
+      }
+
       const activeSummary = activeStations.length > 0 ? activeStations.join(',') : 'none';
       this.log.debug(
         `[${runtime.name}] Refresh #${runtime.refreshTick}: active zones=${activeSummary}, `
@@ -438,6 +453,9 @@ export class RainbirdPlatform implements DynamicPlatformPlugin {
           currentQueueZone,
           currentQueueRuntimeMinutes,
         );
+        if (scheduleSnapshot) {
+          handler.updateProgramMetadata(scheduleSnapshot);
+        }
       }
     } catch (err) {
       runtime.consecutiveRefreshFailures += 1;

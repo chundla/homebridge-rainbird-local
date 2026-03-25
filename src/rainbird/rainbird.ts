@@ -660,6 +660,11 @@ export class RainbirdController {
     return Number(response.seasonalAdjust ?? 0);
   }
 
+  async setWaterBudget(program: number, percent: number): Promise<void> {
+    const normalized = Math.max(0, Math.min(300, Math.floor(percent)));
+    await this.processCommand('WaterBudgetSet', program, normalized);
+  }
+
   async getCurrentQueue(): Promise<QueueState> {
     const page0 = await this.processCommand('CurrentQueueRequest', 0) as Record<string, unknown>;
     const page1 = await this.processCommand('CurrentQueueRequest', 1) as Record<string, unknown>;
