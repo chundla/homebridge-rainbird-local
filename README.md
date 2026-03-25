@@ -15,6 +15,14 @@ Homebridge plugin for **local** Rain Bird controller control (LNK WiFi module), 
   - `controller`: one Irrigation System accessory (+ optional program switches, zone switches, and zone valves)
   - `zones`: one Valve accessory per zone
 
+## Local Control Requirement (Important)
+
+For ESP-TM2 (and likely similar Rain Bird controllers), local API responsiveness may fail when the controller still has normal internet access.
+
+In this test environment, reliable local control required **blocking outbound internet access for the ESP-TM2 at the firewall** while keeping LAN access to Homebridge allowed.
+
+If commands/timeouts are inconsistent, test with internet egress blocked for the controller as a troubleshooting step.
+
 ## Installation
 
 ```bash
@@ -112,6 +120,15 @@ npm link
 - `Active = true` starts that zone (duration from `SetDuration`, fallback default)
 - `Active = false` stops irrigation
 - `RemainingDuration` is updated from polling model (best-effort; not exact runtime API)
+
+## Tested Hardware/Firmware
+
+Tested successfully with:
+
+- Controller: **ESP-TM2**
+- Mobile app provisioning: **Rain Bird v2** app
+- Wi-Fi module firmware: **4.136**
+- Controller firmware: **1.51**
 
 ## Limitations
 
