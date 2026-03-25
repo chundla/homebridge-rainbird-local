@@ -18,11 +18,12 @@ export interface RainbirdControllerConfig {
   programSwitchList?: number[];
   zoneSwitches?: boolean;
   zoneValves?: boolean;
+  stackRunRequests?: boolean;
   logScheduleOnStart?: boolean;
-  debug?: boolean;
 }
 
 export interface RainbirdPlatformConfig extends PlatformConfig, RainbirdControllerConfig {
+  debug?: boolean;
   devices?: RainbirdControllerConfig[];
   additionalControllers?: RainbirdControllerConfig[];
   controllers?: RainbirdControllerConfig[];
@@ -40,6 +41,7 @@ type ControllerRuntime = {
   programSwitches: number[];
   zoneSwitches: boolean;
   zoneValves: boolean;
+  stackRunRequests: boolean;
   logScheduleOnStart: boolean;
   debug: boolean;
   controller: RainbirdController;
@@ -48,6 +50,8 @@ type ControllerRuntime = {
   zones: number[];
   refreshTick: number;
   refreshInProgress: boolean;
+  consecutiveRefreshFailures: number;
+  lastQueueSignature?: string;
 };
 
 export class RainbirdPlatform implements DynamicPlatformPlugin {
@@ -152,6 +156,7 @@ export class RainbirdPlatform implements DynamicPlatformPlugin {
         ),
         zoneSwitches: entry.zoneSwitches ?? this.config.zoneSwitches ?? true,
         zoneValves: entry.zoneValves ?? this.config.zoneValves ?? true,
+        stackRunRequests: entry.stackRunRequests ?? this.config.stackRunRequests ?? false,
         logScheduleOnStart: entry.logScheduleOnStart ?? this.config.logScheduleOnStart ?? false,
         debug: this.config.debug ?? false,
         controller: await RainbirdController.create(host, password, this.log, Boolean(this.config.debug)),
@@ -160,6 +165,7 @@ export class RainbirdPlatform implements DynamicPlatformPlugin {
         zones: [],
         refreshTick: 0,
         refreshInProgress: false,
+        consecutiveRefreshFailures: 0,
       };
 
       try {
@@ -186,7 +192,8 @@ export class RainbirdPlatform implements DynamicPlatformPlugin {
       );
       this.log.info(
         `[${runtime.name}] Expose mode: ${runtime.exposeMode}. Zone valves=${runtime.zoneValves}, `
-        + `zone switches=${runtime.zoneSwitches}, program switches=${runtime.programSwitches.join(',') || 'none'}`,
+        + `zone switches=${runtime.zoneSwitches}, program switches=${runtime.programSwitches.join(',') || 'none'}, `
+        + `stackRun=${runtime.stackRunRequests}`,
       );
       if (runtime.ignoredZones.size > 0) {
         this.log.info(`[${runtime.name}] Ignoring zones: ${[...runtime.ignoredZones].sort((a, b) => a - b).join(',')}`);
@@ -199,6 +206,15 @@ export class RainbirdPlatform implements DynamicPlatformPlugin {
             `[${runtime.name}] Schedule read succeeded (${scheduleSnapshot.programInfo.length} program definition(s), `
             + `${scheduleSnapshot.durations.length} zone duration set(s)).`,
           );
+          this.logProgramMetadata(runtime.name, scheduleSnapshot);
+          const budgets = await Promise.all(runtime.programSwitches.map(async (program) => ({
+            program,
+            budget: await runtime.controller.getWaterBudget(program - 1),
+          })));
+          if (budgets.length > 0) {
+            const budgetSummary = budgets.map((entry) => `${String.fromCharCode(64 + entry.program)}=${entry.budget}%`).join(', ');
+            this.log.info(`[${runtime.name}] Water budgets: ${budgetSummary}`);
+          }
           this.log.debug(`[${runtime.name}] Schedule snapshot:`, JSON.stringify(scheduleSnapshot));
         } catch (err) {
           this.log.warn(`[${runtime.name}] Failed to load schedule:`, err);
@@ -230,7 +246,7 @@ export class RainbirdPlatform implements DynamicPlatformPlugin {
 
     for (const runtime of this.controllers) {
       const timer = setInterval(() => {
-        this.refreshStatus(runtime).catch((err) => this.log.warn(`[${runtime.name}] Refresh failed:`, err));
+        void this.refreshStatus(runtime);
       }, runtime.refreshIntervalSeconds * 1000);
       timer.unref();
       this.refreshTimers.push(timer);
@@ -252,6 +268,7 @@ export class RainbirdPlatform implements DynamicPlatformPlugin {
     accessory.context.programSwitches = runtime.programSwitches;
     accessory.context.zoneSwitches = runtime.zoneSwitches;
     accessory.context.zoneValves = runtime.zoneValves;
+    accessory.context.stackRunRequests = runtime.stackRunRequests;
     accessory.context.model = runtime.modelName;
     accessory.context.active = true;
 
@@ -279,6 +296,7 @@ export class RainbirdPlatform implements DynamicPlatformPlugin {
       accessory.context.serial = runtime.serial;
       accessory.context.zoneName = name;
       accessory.context.defaultDuration = runtime.defaultDuration;
+      accessory.context.stackRunRequests = runtime.stackRunRequests;
       accessory.context.model = runtime.modelName;
       accessory.context.active = true;
 
@@ -290,6 +308,59 @@ export class RainbirdPlatform implements DynamicPlatformPlugin {
         this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
         this.accessories.set(uuid, accessory);
       }
+    }
+  }
+
+  private decodeDaysMask(daysMask: number): string {
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const days = dayNames.filter((_, idx) => ((daysMask >> idx) & 1) === 1);
+    return days.length > 0 ? days.join('/') : 'none';
+  }
+
+  private describeProgramSchedule(daysMask: number, period: number, frequency: number): string {
+    if (daysMask > 0) {
+      return `Weekly: ${this.decodeDaysMask(daysMask)}`;
+    }
+    if (frequency > 0) {
+      return `Cyclic: every ${frequency} day(s)`;
+    }
+
+    if (period === 1) {
+      return 'Odd days';
+    }
+    if (period === 2) {
+      return 'Even days';
+    }
+    if (period === 3) {
+      return 'Custom/Calendar';
+    }
+
+    return `Schedule mode unknown (period=${period})`;
+  }
+
+  private logProgramMetadata(
+    controllerName: string,
+    schedule: { programInfo: Array<Record<string, number>>; programStartInfo: Array<Record<string, number>> },
+  ): void {
+    for (const info of schedule.programInfo) {
+      const program = Number(info.program ?? 0) + 1;
+      const letter = String.fromCharCode(64 + program);
+      const daysMask = Number(info.daysOfWeekMask ?? 0);
+      const period = Number(info.period ?? 0);
+      const frequency = Number(info.frequency ?? 0);
+      const start = schedule.programStartInfo.find((entry) => Number(entry.program ?? -1) === Number(info.program ?? -1));
+      const firstStart = Array.isArray(start?.startTime)
+        ? (start?.startTime as number[]).find((value) => Number(value) !== 65535)
+        : undefined;
+      const startLabel = typeof firstStart === 'number'
+        ? `${Math.floor(firstStart / 60).toString().padStart(2, '0')}:${(firstStart % 60).toString().padStart(2, '0')}`
+        : 'disabled';
+
+      const scheduleLabel = this.describeProgramSchedule(daysMask, period, frequency);
+      this.log.info(`[${controllerName}] Program ${letter}: ${startLabel}, ${scheduleLabel}`);
+      this.log.debug(
+        `[${controllerName}] Program ${letter} raw: daysMask=${daysMask}, period=${period}, frequency=${frequency}`,
+      );
     }
   }
 
@@ -318,7 +389,24 @@ export class RainbirdPlatform implements DynamicPlatformPlugin {
         this.log.debug(`[${runtime.name}] Rain delay fetch failed:`, err);
       }
 
+      const queue = await runtime.controller.getCurrentQueue();
+      const nextQueueZone = Number(queue.zones[0]?.zone ?? 0);
+      const nextQueueRuntimeMinutes = Math.max(0, Math.ceil(Number(queue.zones[0]?.seconds ?? 0) / 60));
+      const currentQueueZone = Number((queue.currentProgram as Record<string, unknown> | undefined)?.zone ?? 0);
+      const currentQueueRuntimeMinutes = Math.max(
+        0,
+        Math.ceil(Number((queue.currentProgram as Record<string, unknown> | undefined)?.seconds ?? 0) / 60),
+      );
+      const queueSignature = JSON.stringify(queue);
+      if (runtime.lastQueueSignature !== queueSignature) {
+        runtime.lastQueueSignature = queueSignature;
+        const nextZone = queue.zones[0]?.zone ?? 'none';
+        this.log.info(`[${runtime.name}] Queue update: next zone=${nextZone}, queued=${queue.zones.length}`);
+        this.log.debug(`[${runtime.name}] Queue payload: ${queueSignature}`);
+      }
+
       runtime.refreshTick += 1;
+      runtime.consecutiveRefreshFailures = 0;
       const activeSummary = activeStations.length > 0 ? activeStations.join(',') : 'none';
       this.log.debug(
         `[${runtime.name}] Refresh #${runtime.refreshTick}: active zones=${activeSummary}, `
@@ -340,7 +428,33 @@ export class RainbirdPlatform implements DynamicPlatformPlugin {
           continue;
         }
         this.handlers.set(uuid, handler);
-        handler.updateStatus(activeSet, rainSensorActive, rainDelayDays);
+        handler.updateStatus(
+          activeSet,
+          rainSensorActive,
+          rainDelayDays,
+          true,
+          nextQueueZone,
+          nextQueueRuntimeMinutes,
+          currentQueueZone,
+          currentQueueRuntimeMinutes,
+        );
+      }
+    } catch (err) {
+      runtime.consecutiveRefreshFailures += 1;
+      this.log.warn(`[${runtime.name}] Refresh failed (${runtime.consecutiveRefreshFailures}):`, err);
+      const unhealthy = runtime.consecutiveRefreshFailures >= 3;
+      if (unhealthy) {
+        for (const [uuid, accessory] of this.accessories.entries()) {
+          if (accessory.context?.controllerKey !== runtime.key) {
+            continue;
+          }
+          const handler = this.handlers.get(uuid) ?? RainbirdAccessory.getHandler(this, accessory);
+          if (!handler) {
+            continue;
+          }
+          this.handlers.set(uuid, handler);
+          handler.updateHealth(false);
+        }
       }
     } finally {
       runtime.refreshInProgress = false;

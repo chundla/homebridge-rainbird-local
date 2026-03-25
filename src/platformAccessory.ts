@@ -23,8 +23,16 @@ type ZoneValve = {
 type WithUUID<T> = T & { UUID: string };
 type CharacteristicCtor = WithUUID<new () => Characteristic>;
 
+type ServiceCtor = WithUUID<typeof Service>;
+
 type CustomTypes = {
   RainDelayCharacteristic: CharacteristicCtor;
+  QueueNextZoneCharacteristic: CharacteristicCtor;
+  QueueRemainingRuntimeCharacteristic: CharacteristicCtor;
+  CurrentZoneCharacteristic: CharacteristicCtor;
+  CurrentRemainingRuntimeCharacteristic: CharacteristicCtor;
+  QueueSummaryCharacteristic: CharacteristicCtor;
+  QueueService: ServiceCtor;
 };
 
 export class RainbirdAccessory {
@@ -62,8 +70,116 @@ export class RainbirdAccessory {
       }
     }
 
+    class QueueNextZoneCharacteristic extends hap.Characteristic {
+      static readonly UUID = '9f1c2a52-35de-4cb5-88c9-3a204c3f93c6';
+      constructor() {
+        super('Queue Next Zone', QueueNextZoneCharacteristic.UUID, {
+          format: hap.Formats.UINT8,
+          perms: [hap.Perms.PAIRED_READ, hap.Perms.NOTIFY],
+        });
+        this.setProps({
+          format: hap.Formats.UINT8,
+          minValue: 0,
+          maxValue: 255,
+          minStep: 1,
+          perms: [hap.Perms.PAIRED_READ, hap.Perms.NOTIFY],
+        });
+        this.value = this.getDefaultValue();
+      }
+    }
+
+    class QueueRemainingRuntimeCharacteristic extends hap.Characteristic {
+      static readonly UUID = '45aeaec4-8f1b-43db-8435-3b6f5f34fa17';
+      constructor() {
+        super('Queue Remaining Runtime', QueueRemainingRuntimeCharacteristic.UUID, {
+          format: hap.Formats.UINT16,
+          perms: [hap.Perms.PAIRED_READ, hap.Perms.NOTIFY],
+        });
+        this.setProps({
+          format: hap.Formats.UINT16,
+          unit: 'min',
+          minValue: 0,
+          maxValue: 65535,
+          minStep: 1,
+          perms: [hap.Perms.PAIRED_READ, hap.Perms.NOTIFY],
+        });
+        this.value = this.getDefaultValue();
+      }
+    }
+
+    class CurrentZoneCharacteristic extends hap.Characteristic {
+      static readonly UUID = '5e8fc8fc-8301-4709-aee0-b3bc5c84c8dd';
+      constructor() {
+        super('Current Running Zone', CurrentZoneCharacteristic.UUID, {
+          format: hap.Formats.UINT8,
+          perms: [hap.Perms.PAIRED_READ, hap.Perms.NOTIFY],
+        });
+        this.setProps({
+          format: hap.Formats.UINT8,
+          minValue: 0,
+          maxValue: 255,
+          minStep: 1,
+          perms: [hap.Perms.PAIRED_READ, hap.Perms.NOTIFY],
+        });
+        this.value = this.getDefaultValue();
+      }
+    }
+
+    class CurrentRemainingRuntimeCharacteristic extends hap.Characteristic {
+      static readonly UUID = '746072eb-a1e7-4ab9-89ff-dff72cd0231a';
+      constructor() {
+        super('Current Remaining Runtime', CurrentRemainingRuntimeCharacteristic.UUID, {
+          format: hap.Formats.UINT16,
+          perms: [hap.Perms.PAIRED_READ, hap.Perms.NOTIFY],
+        });
+        this.setProps({
+          format: hap.Formats.UINT16,
+          unit: 'min',
+          minValue: 0,
+          maxValue: 65535,
+          minStep: 1,
+          perms: [hap.Perms.PAIRED_READ, hap.Perms.NOTIFY],
+        });
+        this.value = this.getDefaultValue();
+      }
+    }
+
+    class QueueSummaryCharacteristic extends hap.Characteristic {
+      static readonly UUID = '2fdbf35e-e0f0-4f8f-aa7b-af6ca760fd4f';
+      constructor() {
+        super('Queue Summary', QueueSummaryCharacteristic.UUID, {
+          format: hap.Formats.STRING,
+          perms: [hap.Perms.PAIRED_READ, hap.Perms.NOTIFY],
+        });
+        this.setProps({
+          format: hap.Formats.STRING,
+          maxLen: 128,
+          perms: [hap.Perms.PAIRED_READ, hap.Perms.NOTIFY],
+        });
+        this.value = this.getDefaultValue();
+      }
+    }
+
+    class QueueService extends hap.Service {
+      static readonly UUID = 'd4bfcde5-6c50-4acb-8a0f-f2e4033f7554';
+      constructor(name: string, subtype?: string) {
+        super(name, QueueService.UUID, subtype);
+        this.addCharacteristic(QueueNextZoneCharacteristic as unknown as CharacteristicCtor);
+        this.addCharacteristic(QueueRemainingRuntimeCharacteristic as unknown as CharacteristicCtor);
+        this.addCharacteristic(CurrentZoneCharacteristic as unknown as CharacteristicCtor);
+        this.addCharacteristic(CurrentRemainingRuntimeCharacteristic as unknown as CharacteristicCtor);
+        this.addCharacteristic(QueueSummaryCharacteristic as unknown as CharacteristicCtor);
+      }
+    }
+
     RainbirdAccessory.customTypes = {
       RainDelayCharacteristic: RainDelayCharacteristic as unknown as CharacteristicCtor,
+      QueueNextZoneCharacteristic: QueueNextZoneCharacteristic as unknown as CharacteristicCtor,
+      QueueRemainingRuntimeCharacteristic: QueueRemainingRuntimeCharacteristic as unknown as CharacteristicCtor,
+      CurrentZoneCharacteristic: CurrentZoneCharacteristic as unknown as CharacteristicCtor,
+      CurrentRemainingRuntimeCharacteristic: CurrentRemainingRuntimeCharacteristic as unknown as CharacteristicCtor,
+      QueueSummaryCharacteristic: QueueSummaryCharacteristic as unknown as CharacteristicCtor,
+      QueueService: QueueService as unknown as ServiceCtor,
     };
 
     return RainbirdAccessory.customTypes;
@@ -73,6 +189,7 @@ export class RainbirdAccessory {
   private irrigationService?: Service;
   private valveService?: Service;
   private rainSensorService?: Service;
+  private queueService?: Service;
   private programSwitches: ProgramSwitch[] = [];
   private zoneSwitches: ZoneSwitch[] = [];
   private zoneValves: ZoneValve[] = [];
@@ -82,6 +199,11 @@ export class RainbirdAccessory {
   private activeZones = new Set<number>();
   private rainDelayDays = 0;
   private rainSensorActive = false;
+  private queueNextZone = 0;
+  private queueRemainingRuntimeMinutes = 0;
+  private currentZone = 0;
+  private currentRemainingRuntimeMinutes = 0;
+  private queueSummary = 'Idle';
 
   private readonly zone?: number;
   private readonly zones: number[];
@@ -111,7 +233,16 @@ export class RainbirdAccessory {
     RainbirdAccessory.handlers.set(this.accessory, this);
   }
 
-  updateStatus(activeStations: Set<number>, rainSensorActive?: boolean, rainDelayDays?: number): void {
+  updateStatus(
+    activeStations: Set<number>,
+    rainSensorActive?: boolean,
+    rainDelayDays?: number,
+    healthy = true,
+    queueNextZone?: number,
+    queueRemainingRuntimeMinutes?: number,
+    currentZone?: number,
+    currentRemainingRuntimeMinutes?: number,
+  ): void {
     this.activeZones = new Set(activeStations);
     if (typeof rainSensorActive === 'boolean') {
       this.rainSensorActive = rainSensorActive;
@@ -119,6 +250,28 @@ export class RainbirdAccessory {
     if (typeof rainDelayDays === 'number') {
       this.rainDelayDays = rainDelayDays;
     }
+    if (typeof queueNextZone === 'number') {
+      this.queueNextZone = Math.max(0, Math.floor(queueNextZone));
+    }
+    if (typeof queueRemainingRuntimeMinutes === 'number') {
+      this.queueRemainingRuntimeMinutes = Math.max(0, Math.floor(queueRemainingRuntimeMinutes));
+    }
+    if (typeof currentZone === 'number') {
+      this.currentZone = Math.max(0, Math.floor(currentZone));
+    }
+    if (typeof currentRemainingRuntimeMinutes === 'number') {
+      this.currentRemainingRuntimeMinutes = Math.max(0, Math.floor(currentRemainingRuntimeMinutes));
+    }
+
+    const runningPart = this.currentZone > 0
+      ? `Running Z${this.currentZone} (${this.currentRemainingRuntimeMinutes}m)`
+      : 'Running none';
+    const nextPart = this.queueNextZone > 0
+      ? `Next Z${this.queueNextZone} (${this.queueRemainingRuntimeMinutes}m)`
+      : 'Next none';
+    this.queueSummary = `${runningPart}, ${nextPart}`;
+
+    this.updateHealth(healthy);
 
     if (this.accessory.context.type === 'controller') {
       this.updateControllerState(activeStations.size > 0, activeStations, this.rainSensorActive, this.rainDelayDays);
@@ -160,6 +313,15 @@ export class RainbirdAccessory {
       );
     }
 
+    if (this.queueService) {
+      const custom = RainbirdAccessory.getCustomTypes(this.platform);
+      this.queueService.updateCharacteristic(custom.QueueNextZoneCharacteristic, this.queueNextZone);
+      this.queueService.updateCharacteristic(custom.QueueRemainingRuntimeCharacteristic, this.queueRemainingRuntimeMinutes);
+      this.queueService.updateCharacteristic(custom.CurrentZoneCharacteristic, this.currentZone);
+      this.queueService.updateCharacteristic(custom.CurrentRemainingRuntimeCharacteristic, this.currentRemainingRuntimeMinutes);
+      this.queueService.updateCharacteristic(custom.QueueSummaryCharacteristic, this.queueSummary);
+    }
+
     for (const programSwitch of this.programSwitches) {
       programSwitch.service.updateCharacteristic(this.platform.Characteristic.On, false);
     }
@@ -177,6 +339,26 @@ export class RainbirdAccessory {
         ? this.platform.Characteristic.InUse.IN_USE
         : this.platform.Characteristic.InUse.NOT_IN_USE);
       zoneValve.service.updateCharacteristic(this.platform.Characteristic.RemainingDuration, active ? zoneValve.durationSeconds : 0);
+    }
+  }
+
+  updateHealth(healthy: boolean): void {
+    const fault = healthy
+      ? this.platform.Characteristic.StatusFault.NO_FAULT
+      : this.platform.Characteristic.StatusFault.GENERAL_FAULT;
+
+    this.irrigationService?.updateCharacteristic(this.platform.Characteristic.StatusFault, fault);
+    this.valveService?.updateCharacteristic(this.platform.Characteristic.StatusFault, fault);
+    this.rainSensorService?.updateCharacteristic(this.platform.Characteristic.StatusFault, fault);
+
+    for (const programSwitch of this.programSwitches) {
+      programSwitch.service.updateCharacteristic(this.platform.Characteristic.StatusFault, fault);
+    }
+    for (const zoneSwitch of this.zoneSwitches) {
+      zoneSwitch.service.updateCharacteristic(this.platform.Characteristic.StatusFault, fault);
+    }
+    for (const zoneValve of this.zoneValves) {
+      zoneValve.service.updateCharacteristic(this.platform.Characteristic.StatusFault, fault);
     }
   }
 
@@ -246,6 +428,8 @@ export class RainbirdAccessory {
       .onGet(() => (this.rainSensorActive
         ? this.platform.Characteristic.LeakDetected.LEAK_DETECTED
         : this.platform.Characteristic.LeakDetected.LEAK_NOT_DETECTED));
+
+    this.setupQueueService();
 
     const enabledPrograms = Array.isArray(this.accessory.context.programSwitches)
       ? this.accessory.context.programSwitches as number[]
@@ -320,6 +504,29 @@ export class RainbirdAccessory {
     }
 
     this.pruneControllerServices(enabledPrograms, shouldExposeZoneSwitches, shouldExposeZoneValves, this.zones);
+  }
+
+  private setupQueueService(): void {
+    const custom = RainbirdAccessory.getCustomTypes(this.platform);
+    this.queueService = this.accessory.getService(custom.QueueService)
+      || this.accessory.addService(custom.QueueService, 'Queue Status', 'queue-status');
+
+    this.queueService.setCharacteristic(this.platform.Characteristic.Name, 'Queue Status');
+
+    this.queueService.getCharacteristic(custom.QueueNextZoneCharacteristic)
+      .onGet(() => this.queueNextZone);
+
+    this.queueService.getCharacteristic(custom.QueueRemainingRuntimeCharacteristic)
+      .onGet(() => this.queueRemainingRuntimeMinutes);
+
+    this.queueService.getCharacteristic(custom.CurrentZoneCharacteristic)
+      .onGet(() => this.currentZone);
+
+    this.queueService.getCharacteristic(custom.CurrentRemainingRuntimeCharacteristic)
+      .onGet(() => this.currentRemainingRuntimeMinutes);
+
+    this.queueService.getCharacteristic(custom.QueueSummaryCharacteristic)
+      .onGet(() => this.queueSummary);
   }
 
   private pruneControllerServices(programSwitches: number[], zoneSwitches: boolean, zoneValves: boolean, activeZones: number[]): void {
@@ -411,8 +618,14 @@ export class RainbirdAccessory {
     }
 
     const durationSeconds = this.remainingDuration > 0 ? this.remainingDuration : this.defaultDuration * 60;
-    this.log.info(`Starting zone ${zone} for ${Math.max(1, Math.ceil(durationSeconds / 60))} minute(s)`);
-    await this.controller.startZone(zone, Math.max(1, Math.ceil(durationSeconds / 60)));
+    const minutes = Math.max(1, Math.ceil(durationSeconds / 60));
+    this.log.info(`Starting zone ${zone} for ${minutes} minute(s)`);
+    if (this.accessory.context.stackRunRequests && this.activeZones.size > 0) {
+      this.log.info(`Stacking zone ${zone} behind active run`);
+      await this.controller.stackZone(zone, minutes);
+    } else {
+      await this.controller.startZone(zone, minutes);
+    }
     this.isActive = true;
     this.remainingDuration = durationSeconds;
     this.activeZones = new Set([zone]);
@@ -426,7 +639,12 @@ export class RainbirdAccessory {
       return;
     }
     this.log.info(`Starting zone ${zone} from zone switch for ${this.defaultDuration} minute(s)`);
-    await this.controller.startZone(zone, this.defaultDuration);
+    if (this.accessory.context.stackRunRequests && this.activeZones.size > 0) {
+      this.log.info(`Stacking zone ${zone} from zone switch`);
+      await this.controller.stackZone(zone, this.defaultDuration);
+    } else {
+      await this.controller.startZone(zone, this.defaultDuration);
+    }
   }
 
   private async setProgramSwitch(program: number, value: CharacteristicValue): Promise<void> {
@@ -455,8 +673,14 @@ export class RainbirdAccessory {
       return;
     }
     const durationSeconds = this.zoneValves.find((v) => v.zone === zone)?.durationSeconds ?? this.defaultDuration * 60;
-    this.log.info(`Starting controller-zone valve ${zone} for ${Math.max(1, Math.ceil(durationSeconds / 60))} minute(s)`);
-    await this.controller.startZone(zone, Math.max(1, Math.ceil(durationSeconds / 60)));
+    const minutes = Math.max(1, Math.ceil(durationSeconds / 60));
+    this.log.info(`Starting controller-zone valve ${zone} for ${minutes} minute(s)`);
+    if (this.accessory.context.stackRunRequests && this.activeZones.size > 0) {
+      this.log.info(`Stacking controller-zone valve ${zone}`);
+      await this.controller.stackZone(zone, minutes);
+    } else {
+      await this.controller.startZone(zone, minutes);
+    }
   }
 
   private async setRainDelay(value: CharacteristicValue): Promise<void> {

@@ -54,6 +54,11 @@ export interface Schedule {
   durations: Array<{ zone: number; durations: number[] }>;
 }
 
+export interface QueueState {
+  currentProgram?: Record<string, unknown>;
+  zones: Array<Record<string, number>>;
+}
+
 interface RainbirdResources {
   commands: Record<string, RainbirdCommand>;
   commandsById: Record<string, RainbirdCommand>;
@@ -642,8 +647,27 @@ export class RainbirdController {
     await this.processCommand('ManuallyRunStationRequest', zone, minutes);
   }
 
+  async stackZone(zone: number, minutes: number): Promise<void> {
+    await this.processCommand('StackManuallyRunStationRequest', 0, zone, minutes);
+  }
+
   async startProgram(program: number): Promise<void> {
     await this.processCommand('ManuallyRunProgramRequest', program);
+  }
+
+  async getWaterBudget(program: number): Promise<number> {
+    const response = await this.processCommand('WaterBudgetRequest', program) as Record<string, number>;
+    return Number(response.seasonalAdjust ?? 0);
+  }
+
+  async getCurrentQueue(): Promise<QueueState> {
+    const page0 = await this.processCommand('CurrentQueueRequest', 0) as Record<string, unknown>;
+    const page1 = await this.processCommand('CurrentQueueRequest', 1) as Record<string, unknown>;
+    const zones = Array.isArray(page1?.zones) ? page1.zones as Array<Record<string, number>> : [];
+    const currentProgram = (page0 && typeof page0 === 'object' && 'program' in page0)
+      ? page0.program as Record<string, unknown>
+      : undefined;
+    return { currentProgram, zones };
   }
 
   async getSchedule(): Promise<Schedule> {
