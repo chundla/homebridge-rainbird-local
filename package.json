@@ -10,7 +10,7 @@
   "homepage": "https://github.com/chundla/homebridge-rainbird-v2#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/chundla/homebridge-rainbird-v2.git"
+    "url": "git+https://github.com/chundla/homebridge-rainbird-v2.git"
   },
   "bugs": {
     "url": "https://github.com/chundla/homebridge-rainbird-v2/issues"
