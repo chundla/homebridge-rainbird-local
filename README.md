@@ -1,4 +1,4 @@
-# homebridge-rainbird-v2
+# homebridge-rainbird-local
 
 Homebridge plugin for **local** Rain Bird controller control (LNK WiFi module), with HTTPS-first and HTTP fallback for mixed firmware behavior.
 

@@ -1,22 +1,23 @@
 {
-  "name": "homebridge-rainbird-v2",
-  "displayName": "Rain Bird v2",
+  "name": "homebridge-rainbird-local",
+  "displayName": "Rain Bird",
   "type": "module",
   "version": "0.1.0",
   "description": "Local Rain Bird controller plugin with HTTPS fallback for 2.x firmware",
-  "author": "Chundla",
+  "author": "chundla",
   "license": "MIT",
-  "homepage": "https://github.com/chundla/homebridge-rainbird-v2#readme",
+  "homepage": "https://github.com/chundla/homebridge-rainbird-local#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/chundla/homebridge-rainbird-v2.git"
+    "url": "git+https://github.com/chundla/homebridge-rainbird-local.git"
   },
   "bugs": {
-    "url": "https://github.com/chundla/homebridge-rainbird-v2/issues"
+    "url": "https://github.com/chundla/homebridge-rainbird-local/issues"
   },
   "keywords": [
     "homebridge-plugin",
     "rainbird",
+    "HomeKit",
     "irrigation"
   ],
   "main": "dist/index.js",

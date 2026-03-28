@@ -1,5 +1,5 @@
 {
-  "pluginAlias": "RainBirdv2",
+  "pluginAlias": "RainBirdLocal",
   "pluginType": "platform",
   "singular": true,
   "schema": {
