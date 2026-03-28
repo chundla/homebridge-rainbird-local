@@ -3,7 +3,7 @@
   "displayName": "Rain Bird v2",
   "type": "module",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
   "description": "Local Rain Bird controller plugin with HTTPS fallback for 2.x firmware",
   "author": "Chundla",
   "license": "MIT",
