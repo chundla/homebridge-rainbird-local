@@ -610,7 +610,6 @@ export class RainbirdAccessory {
 
     for (const program of enabledPrograms) {
       const letter = String.fromCharCode(64 + program);
-      const name = `Program ${letter} Budget`;
       const subtype = `program-budget-${program}`;
       const existingCustom = this.accessory.getServiceById(custom.ProgramService, subtype);
       if (existingCustom) {
@@ -701,7 +700,13 @@ export class RainbirdAccessory {
       .onGet(() => this.queueSummary);
   }
 
-  private pruneControllerServices(programSwitches: number[], programBudgetPrograms: number[], zoneSwitches: boolean, zoneValves: boolean, activeZones: number[]): void {
+  private pruneControllerServices(
+    programSwitches: number[],
+    programBudgetPrograms: number[],
+    zoneSwitches: boolean,
+    zoneValves: boolean,
+    activeZones: number[],
+  ): void {
     for (const service of [...this.accessory.services]) {
       const subtype = service.subtype ?? '';
       if (subtype.startsWith('program-budget-')) {
