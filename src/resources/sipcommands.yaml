@@ -74,10 +74,14 @@ ControllerCommands:
     length: 2
   WaterBudgetSet:
     command: '31'
-    parameterOne: 0
-    parameterTwo: 0
     response: '01'
-    length: 3
+    length: 4
+    programCode:
+      position: 2
+      length: 2
+    seasonalAdjust:
+      position: 4
+      length: 4
   ZonesSeasonalAdjustFactorRequest:
     command: '32'
     parameter: 0

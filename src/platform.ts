@@ -16,10 +16,13 @@ export interface RainbirdControllerConfig {
   refreshIntervalSeconds?: number;
   programSwitches?: boolean;
   programSwitchList?: number[];
+  programBudgetServiceType?: 'fan' | 'light' | 'switch';
   zoneSwitches?: boolean;
   zoneValves?: boolean;
   stackRunRequests?: boolean;
   logScheduleOnStart?: boolean;
+  requestTimeoutMs?: number;
+  connectTimeoutMs?: number;
 }
 
 export interface RainbirdPlatformConfig extends PlatformConfig, RainbirdControllerConfig {
@@ -39,11 +42,14 @@ type ControllerRuntime = {
   defaultDuration: number;
   refreshIntervalSeconds: number;
   programSwitches: number[];
+  programBudgetServiceType: 'fan' | 'light' | 'switch';
   zoneSwitches: boolean;
   zoneValves: boolean;
   stackRunRequests: boolean;
   logScheduleOnStart: boolean;
   debug: boolean;
+  requestTimeoutMs: number;
+  connectTimeoutMs: number;
   controller: RainbirdController;
   serial: string;
   modelName: string;
@@ -154,12 +160,24 @@ export class RainbirdPlatform implements DynamicPlatformPlugin {
           entry.programSwitches ?? this.config.programSwitches,
           entry.programSwitchList ?? this.config.programSwitchList,
         ),
+        programBudgetServiceType: (entry.programBudgetServiceType ?? this.config.programBudgetServiceType ?? 'fan'),
         zoneSwitches: entry.zoneSwitches ?? this.config.zoneSwitches ?? true,
         zoneValves: entry.zoneValves ?? this.config.zoneValves ?? true,
         stackRunRequests: entry.stackRunRequests ?? this.config.stackRunRequests ?? false,
         logScheduleOnStart: entry.logScheduleOnStart ?? this.config.logScheduleOnStart ?? false,
         debug: this.config.debug ?? false,
-        controller: await RainbirdController.create(host, password, this.log, Boolean(this.config.debug)),
+        requestTimeoutMs: entry.requestTimeoutMs ?? this.config.requestTimeoutMs ?? 15000,
+        connectTimeoutMs: entry.connectTimeoutMs ?? this.config.connectTimeoutMs ?? 10000,
+        controller: await RainbirdController.create(
+          host,
+          password,
+          this.log,
+          Boolean(this.config.debug),
+          {
+            requestTimeoutMs: entry.requestTimeoutMs ?? this.config.requestTimeoutMs ?? 15000,
+            connectTimeoutMs: entry.connectTimeoutMs ?? this.config.connectTimeoutMs ?? 10000,
+          },
+        ),
         serial: host,
         modelName: 'Rain Bird Controller',
         zones: [],
@@ -216,6 +234,10 @@ export class RainbirdPlatform implements DynamicPlatformPlugin {
             const budgetSummary = budgets.map((entry) => `${String.fromCharCode(64 + entry.program)}=${entry.budget}%`).join(', ');
             this.log.info(`[${runtime.name}] Water budgets: ${budgetSummary}`);
           }
+          const handler = this.handlers.get(this.api.hap.uuid.generate(`${runtime.key}:${runtime.serial}-controller`));
+          if (handler && budgets.length > 0) {
+            handler.updateProgramBudgets(budgets);
+          }
           this.log.debug(`[${runtime.name}] Schedule snapshot:`, JSON.stringify(scheduleSnapshot));
         } catch (err) {
           this.log.warn(`[${runtime.name}] Failed to load schedule:`, err);
@@ -270,6 +292,7 @@ export class RainbirdPlatform implements DynamicPlatformPlugin {
     accessory.context.zoneNames = runtime.zoneNames;
     accessory.context.defaultDuration = runtime.defaultDuration;
     accessory.context.programSwitches = runtime.programSwitches;
+    accessory.context.programBudgetServiceType = runtime.programBudgetServiceType;
     accessory.context.zoneSwitches = runtime.zoneSwitches;
     accessory.context.zoneValves = runtime.zoneValves;
     accessory.context.stackRunRequests = runtime.stackRunRequests;
@@ -417,6 +440,14 @@ export class RainbirdPlatform implements DynamicPlatformPlugin {
         try {
           scheduleSnapshot = await runtime.controller.getSchedule();
           this.logProgramMetadata(runtime.name, scheduleSnapshot);
+          const budgets = await Promise.all(runtime.programSwitches.map(async (program) => ({
+            program,
+            budget: await runtime.controller.getWaterBudget(program - 1),
+          })));
+          const handler = this.handlers.get(this.api.hap.uuid.generate(`${runtime.key}:${runtime.serial}-controller`));
+          if (handler && budgets.length > 0) {
+            handler.updateProgramBudgets(budgets);
+          }
         } catch (err) {
           this.log.debug(`[${runtime.name}] Schedule metadata refresh failed:`, err);
         }

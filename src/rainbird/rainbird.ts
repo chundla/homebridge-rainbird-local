@@ -5,6 +5,11 @@ import { fileURLToPath } from 'node:url';
 import yaml from 'yaml';
 import { Agent as UndiciAgent } from 'undici';
 
+type RainbirdRequestOptions = {
+  requestTimeoutMs?: number;
+  connectTimeoutMs?: number;
+};
+
 export type RainbirdCommand = Record<string, unknown>;
 
 const COMMAND = 'command';
@@ -188,13 +193,29 @@ class RainbirdHttpClient {
   private coder: PayloadCoder;
   private retryOnBusy = false;
 
+  private dispatcher?: UndiciAgent;
+  private requestTimeoutMs: number;
+  private connectTimeoutMs: number;
+
   constructor(
     private readonly url: string,
     password: string | null,
     private readonly ssl: boolean,
     private readonly debug?: (message: string, ...params: unknown[]) => void,
+    options: RainbirdRequestOptions = {},
   ) {
     this.coder = new PayloadCoder(password);
+    this.requestTimeoutMs = options.requestTimeoutMs ?? 15000;
+    this.connectTimeoutMs = options.connectTimeoutMs ?? 10000;
+    const connect = this.ssl
+      ? { rejectUnauthorized: false, timeout: this.connectTimeoutMs }
+      : { timeout: this.connectTimeoutMs };
+    this.dispatcher = new UndiciAgent({
+      connect,
+      keepAliveTimeout: 30000,
+      keepAliveMaxTimeout: 120000,
+      connections: 1,
+    });
   }
 
   enableRetryOnBusy(): void {
@@ -203,33 +224,39 @@ class RainbirdHttpClient {
 
   async request(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
     const body = this.coder.encodeCommand(method, params);
-    const httpsDispatcher = this.ssl ? new UndiciAgent({ connect: { rejectUnauthorized: false } }) : undefined;
 
     const attempt = async () => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), this.requestTimeoutMs);
       const init: RequestInit & { dispatcher?: UndiciAgent } = {
         method: 'POST',
         body: body as unknown as BodyInit,
         headers: HEADERS,
+        signal: controller.signal,
       };
-      if (httpsDispatcher) {
-        init.dispatcher = httpsDispatcher;
+      if (this.dispatcher) {
+        init.dispatcher = this.dispatcher;
       }
       this.debug?.(`Rain Bird request ${method} -> ${this.url} (len=${body.length})`);
-      const res = await fetch(this.url, init);
-      if (res.status === 503) {
-        const error = new Error('Rain Bird device is busy; wait and retry') as Error & { code?: number };
-        error.code = 503;
-        throw error;
-      }
-      if (!res.ok) {
-        if (res.status === 403) {
-          throw new Error('Rain Bird device denied authentication; incorrect password');
+      try {
+        const res = await fetch(this.url, init);
+        if (res.status === 503) {
+          const error = new Error('Rain Bird device is busy; wait and retry') as Error & { code?: number };
+          error.code = 503;
+          throw error;
         }
-        throw new Error(`Rain Bird error: ${res.status} ${res.statusText}`);
+        if (!res.ok) {
+          if (res.status === 403) {
+            throw new Error('Rain Bird device denied authentication; incorrect password');
+          }
+          throw new Error(`Rain Bird error: ${res.status} ${res.statusText}`);
+        }
+        const buffer = Buffer.from(await res.arrayBuffer());
+        this.debug?.(`Rain Bird response ${method} <- ${this.url} (len=${buffer.length})`);
+        return this.coder.decodeCommand(buffer);
+      } finally {
+        clearTimeout(timeout);
       }
-      const buffer = Buffer.from(await res.arrayBuffer());
-      this.debug?.(`Rain Bird response ${method} <- ${this.url} (len=${buffer.length})`);
-      return this.coder.decodeCommand(buffer);
     };
 
     if (!this.retryOnBusy) {
@@ -530,13 +557,14 @@ export class RainbirdController {
     password: string,
     log?: { debug: (message: string, ...params: unknown[]) => void; warn: (message: string, ...params: unknown[]) => void },
     debugEnabled = false,
+    options: RainbirdRequestOptions = {},
   ): Promise<RainbirdController> {
     const normalized = host.trim().replace(/\/$/, '').replace(/^https?:\/\//, '');
     const httpsUrl = `https://${normalized}/stick`;
     const httpUrl = `http://${normalized}/stick`;
 
     const debug = debugEnabled && log ? log.debug.bind(log) : undefined;
-    const httpsClient = new RainbirdHttpClient(httpsUrl, password, true, debug);
+    const httpsClient = new RainbirdHttpClient(httpsUrl, password, true, debug, options);
     const controller = new RainbirdController(httpsClient, debug);
     try {
       await controller.getModelAndVersion();
@@ -545,6 +573,8 @@ export class RainbirdController {
       const message = String((err as Error)?.message ?? '').toLowerCase();
       const maybeConn = message.includes('econnrefused')
         || message.includes('connect')
+        || message.includes('timeout')
+        || message.includes('aborted')
         || message.includes('tls')
         || message.includes('ssl')
         || message.includes('certificate');
@@ -554,7 +584,7 @@ export class RainbirdController {
       // fall through to HTTP
     }
 
-    const httpClient = new RainbirdHttpClient(httpUrl, password, false, debug);
+    const httpClient = new RainbirdHttpClient(httpUrl, password, false, debug, options);
     const httpController = new RainbirdController(httpClient, debug);
     await httpController.getModelAndVersion();
     return httpController;

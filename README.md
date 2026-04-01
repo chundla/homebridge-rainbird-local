@@ -9,7 +9,8 @@ Homebridge plugin for **local** Rain Bird controller control (LNK WiFi module), 
 - Read model, serial, stations, active stations, current queue, and schedule metadata
 - Expose queue next-zone/remaining runtime, current running zone/remaining runtime, and human-readable queue summary via a dedicated HomeKit Queue Status service
 - Start/stop irrigation manually, including optional stack-run queueing
-- Water budget reads for configured programs
+- Water budget read/write for configured programs
+- Program budget HomeKit UI type selector: `fan`, `light`, or `switch` (one service type per enabled program)
 - Health watchdog marks accessories as faulted after repeated refresh failures
 - Two expose modes:
   - `controller`: one Irrigation System accessory (+ optional program switches, zone switches, and zone valves)
@@ -55,9 +56,12 @@ npm link
       "refreshIntervalSeconds": 30,
       "programSwitches": true,
       "programSwitchList": [1, 3],
+      "programBudgetServiceType": "light",
       "zoneValves": true,
       "zoneSwitches": false,
-      "logScheduleOnStart": false
+      "logScheduleOnStart": false,
+      "requestTimeoutMs": 15000,
+      "connectTimeoutMs": 10000
     }
   ]
 }
@@ -76,7 +80,12 @@ npm link
 - `ignoredZones`: zone numbers to hide/ignore entirely
 - `programSwitches`: boolean toggle to enable/disable program switches
 - `programSwitchList`: optional specific list like `[1,3]` (A=1, B=2, C=3, D=4)
+- `programBudgetServiceType`: choose budget control tile type in HomeKit (`fan`, `light`, `switch`).
+  - Exactly one budget UI service is created per enabled program.
+  - Enabled programs follow `programSwitchList`; if list is omitted and program switches are enabled, programs A-D are used.
 - `stackRunRequests`: queue a zone request behind an active run instead of interrupting it
+- `requestTimeoutMs`: total request timeout in milliseconds (default 15000)
+- `connectTimeoutMs`: connect timeout in milliseconds (default 10000)
 
 ## Multi-controller example
 
@@ -111,6 +120,7 @@ npm link
 - `Active = true` starts irrigation on first discovered zone using `defaultDurationMinutes`
 - `Active = false` sends stop irrigation
 - Optional Program A-D switches trigger manual program run
+- Program budget service is shown per enabled program using the configured service type (`fan`, `light`, or `switch`)
 - Optional zone switches provide quick on/off per zone (auto-disabled when zone valves are enabled to avoid redundant tiles)
 - Optional zone valves provide native Apple Home valve tiles (Active/In Use/Set Duration)
 
@@ -149,6 +159,17 @@ Tested successfully with:
 npm run lint
 npm run build
 ```
+
+## Release notes
+
+### v0.2.0 (since v0.1.0)
+
+- Fixed `WaterBudgetSet` command encoding/parsing (`sipcommands.yaml`) to send program + seasonal adjust fields correctly.
+- Added reliable program water budget read/write control path.
+- Added configurable program budget service UI type (`programBudgetServiceType`: `fan` | `light` | `switch`).
+- Budget service count now follows enabled programs from `programSwitchList` (or defaults to A-D when list is unset and program switches are enabled).
+- Added request/connect timeout settings for Rain Bird transport and passed these through controller creation.
+- Improved transport resilience with explicit request abort timeout handling and stronger HTTPS→HTTP fallback conditions.
 
 ## Project status
 

@@ -10,6 +10,16 @@
         "type": "string",
         "default": "Rain Bird"
       },
+      "programBudgetServiceType": {
+        "title": "Program Budget Service Type",
+        "type": "string",
+        "default": "fan",
+        "oneOf": [
+          { "title": "Fan", "enum": ["fan"] },
+          { "title": "Light", "enum": ["light"] },
+          { "title": "Switch", "enum": ["switch"] }
+        ]
+      },
       "debug": {
         "title": "Verbose Debug Logging",
         "type": "boolean",
@@ -48,10 +58,22 @@
               },
               "description": "Use values 1-4 (A-D)."
             },
+            "programBudgetServiceType": {
+              "title": "Program Budget Service Type",
+              "type": "string",
+              "default": "fan",
+              "oneOf": [
+                { "title": "Fan", "enum": ["fan"] },
+                { "title": "Light", "enum": ["light"] },
+                { "title": "Switch", "enum": ["switch"] }
+              ]
+            },
             "zoneSwitches": { "title": "Expose Zone Switches", "type": "boolean", "default": true },
             "zoneValves": { "title": "Expose Zone Valves", "type": "boolean", "default": true },
             "stackRunRequests": { "title": "Stack Run Requests", "type": "boolean", "default": false, "description": "Queue zone starts instead of interrupting active irrigation." },
-            "logScheduleOnStart": { "title": "Log Schedule on Start", "type": "boolean", "default": false }
+            "logScheduleOnStart": { "title": "Log Schedule on Start", "type": "boolean", "default": false },
+            "requestTimeoutMs": { "title": "Request Timeout (ms)", "type": "integer", "default": 15000, "minimum": 1000 },
+            "connectTimeoutMs": { "title": "Connect Timeout (ms)", "type": "integer", "default": 10000, "minimum": 1000 }
           },
           "required": ["host", "password"]
         }

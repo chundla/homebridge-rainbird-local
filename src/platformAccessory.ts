@@ -9,13 +9,15 @@ type ProgramSwitch = {
 
 type ProgramBudgetService = {
   program: number;
-  service: Service;
+  service?: Service;
+  uiService?: Service;
+  uiType?: 'fan' | 'light' | 'switch';
   budget: number;
   runtimeMinutes: number;
+  lastBudgetUpdate?: number;
   firstStartMinutes: number;
   daysMask: number;
 };
-
 type ZoneSwitch = {
   zone: number;
   service: Service;
@@ -185,7 +187,7 @@ export class RainbirdAccessory {
           format: hap.Formats.UINT16,
           unit: '%',
           minValue: 0,
-          maxValue: 300,
+          maxValue: 100,
           minStep: 1,
           perms: [hap.Perms.PAIRED_READ, hap.Perms.PAIRED_WRITE, hap.Perms.NOTIFY],
         });
@@ -294,6 +296,12 @@ export class RainbirdAccessory {
   private readonly zone?: number;
   private readonly zones: number[];
   private readonly defaultDuration: number;
+
+  private scheduleProgramInfo: Array<Record<string, number>> = [];
+  private scheduleProgramStartInfo: Array<Record<string, number>> = [];
+  private scheduleDurations: Array<{ zone: number; durations: number[] }> = [];
+  private adjustedZoneDurationsSeconds: Map<number, number> = new Map();
+  private zoneDefaultDurationSeconds?: number;
 
   constructor(
     private readonly platform: RainbirdPlatform,
@@ -454,8 +462,9 @@ export class RainbirdAccessory {
     }
 
     const active = activeStations.has(zone);
+    const defaultSeconds = this.zoneDefaultDurationSeconds ?? this.defaultDuration * 60;
     this.isActive = active;
-    this.remainingDuration = active ? this.defaultDuration * 60 : 0;
+    this.remainingDuration = active ? defaultSeconds : 0;
 
     this.valveService.updateCharacteristic(this.platform.Characteristic.Active, active
       ? this.platform.Characteristic.Active.ACTIVE
@@ -520,7 +529,8 @@ export class RainbirdAccessory {
     const enabledPrograms = Array.isArray(this.accessory.context.programSwitches)
       ? this.accessory.context.programSwitches as number[]
       : (this.accessory.context.programSwitches ? [1, 2, 3, 4] : []);
-    this.setupProgramBudgetServices(enabledPrograms);
+    const enabledProgramsForBudgets = enabledPrograms.length > 0 ? enabledPrograms : [1, 2, 3, 4];
+    this.setupProgramBudgetServices(enabledProgramsForBudgets);
 
     const shouldExposeSwitches = enabledPrograms.length > 0;
     if (shouldExposeSwitches) {
@@ -591,7 +601,7 @@ export class RainbirdAccessory {
       }
     }
 
-    this.pruneControllerServices(enabledPrograms, shouldExposeZoneSwitches, shouldExposeZoneValves, this.zones);
+    this.pruneControllerServices(enabledPrograms, enabledProgramsForBudgets, shouldExposeZoneSwitches, shouldExposeZoneValves, this.zones);
   }
 
   private setupProgramBudgetServices(enabledPrograms: number[]): void {
@@ -602,25 +612,66 @@ export class RainbirdAccessory {
       const letter = String.fromCharCode(64 + program);
       const name = `Program ${letter} Budget`;
       const subtype = `program-budget-${program}`;
-      const service = this.accessory.getServiceById(custom.ProgramService, subtype)
-        || this.accessory.addService(custom.ProgramService, name, subtype);
+      const existingCustom = this.accessory.getServiceById(custom.ProgramService, subtype);
+      if (existingCustom) {
+        this.accessory.removeService(existingCustom);
+      }
+      const staleFan = this.accessory.getServiceById(this.platform.Service.Fanv2, `program-fan-${program}`);
+      if (staleFan) {
+        this.accessory.removeService(staleFan);
+      }
+      const staleLight = this.accessory.getServiceById(this.platform.Service.Lightbulb, `program-light-${program}`);
+      if (staleLight) {
+        this.accessory.removeService(staleLight);
+      }
+      const staleSwitch = this.accessory.getServiceById(this.platform.Service.Switch, `program-switch-${program}`);
+      if (staleSwitch) {
+        this.accessory.removeService(staleSwitch);
+      }
+      const service: Service | undefined = undefined;
 
-      service.setCharacteristic(this.platform.Characteristic.Name, name);
-      service.getCharacteristic(custom.ProgramBudgetCharacteristic)
-        .onGet(async () => this.getProgramBudget(program))
-        .onSet(async (value) => this.setProgramBudget(program, value));
-      service.getCharacteristic(custom.ProgramRuntimeMinutesCharacteristic)
-        .onGet(() => this.programBudgetServices.find((entry) => entry.program === program)?.runtimeMinutes ?? 0);
-      service.getCharacteristic(custom.ProgramFirstStartCharacteristic)
-        .onGet(() => this.programBudgetServices.find((entry) => entry.program === program)?.firstStartMinutes ?? 0);
-      service.getCharacteristic(custom.ProgramDaysMaskCharacteristic)
-        .onGet(() => this.programBudgetServices.find((entry) => entry.program === program)?.daysMask ?? 0);
+      const budgetUiType = (this.accessory.context.programBudgetServiceType ?? 'fan') as 'fan' | 'light' | 'switch';
+      const uiName = `Program ${letter} Budget`;
+      const uiSubtype = `program-${budgetUiType}-${program}`;
+      let uiService: Service | undefined;
+
+      if (budgetUiType === 'fan') {
+        uiService = this.accessory.getServiceById(this.platform.Service.Fanv2, uiSubtype)
+          || this.accessory.addService(this.platform.Service.Fanv2, uiName, uiSubtype);
+        uiService.setCharacteristic(this.platform.Characteristic.Name, uiName);
+        uiService.getCharacteristic(this.platform.Characteristic.Active)
+          .onGet(() => this.platform.Characteristic.Active.ACTIVE)
+          .onSet(() => undefined);
+        uiService.getCharacteristic(this.platform.Characteristic.RotationSpeed)
+          .onGet(() => this.programBudgetServices.find((entry) => entry.program === program)?.budget ?? 0)
+          .onSet((value) => this.setProgramBudget(program, value));
+      } else if (budgetUiType === 'light') {
+        uiService = this.accessory.getServiceById(this.platform.Service.Lightbulb, uiSubtype)
+          || this.accessory.addService(this.platform.Service.Lightbulb, uiName, uiSubtype);
+        uiService.setCharacteristic(this.platform.Characteristic.Name, uiName);
+        uiService.getCharacteristic(this.platform.Characteristic.On)
+          .onGet(() => (this.programBudgetServices.find((entry) => entry.program === program)?.budget ?? 0) > 0)
+          .onSet((value) => this.setProgramBudget(program, value ? 100 : 0));
+        uiService.getCharacteristic(this.platform.Characteristic.Brightness)
+          .onGet(() => this.programBudgetServices.find((entry) => entry.program === program)?.budget ?? 0)
+          .onSet((value) => this.setProgramBudget(program, value));
+      } else {
+        uiService = this.accessory.getServiceById(this.platform.Service.Switch, uiSubtype)
+          || this.accessory.addService(this.platform.Service.Switch, uiName, uiSubtype);
+        uiService.setCharacteristic(this.platform.Characteristic.Name, uiName);
+        uiService.getCharacteristic(this.platform.Characteristic.On)
+          .onGet(() => (this.programBudgetServices.find((entry) => entry.program === program)?.budget ?? 0) > 0)
+          .onSet((value) => this.setProgramBudget(program, value ? 100 : 0));
+      }
 
       this.programBudgetServices.push({
         program,
         service,
+        uiService,
+        uiType: budgetUiType,
         budget: 0,
         runtimeMinutes: 0,
+        lastBudgetUpdate: undefined,
         firstStartMinutes: 0,
         daysMask: 0,
       });
@@ -650,16 +701,17 @@ export class RainbirdAccessory {
       .onGet(() => this.queueSummary);
   }
 
-  private pruneControllerServices(programSwitches: number[], zoneSwitches: boolean, zoneValves: boolean, activeZones: number[]): void {
+  private pruneControllerServices(programSwitches: number[], programBudgetPrograms: number[], zoneSwitches: boolean, zoneValves: boolean, activeZones: number[]): void {
     for (const service of [...this.accessory.services]) {
       const subtype = service.subtype ?? '';
       if (subtype.startsWith('program-budget-')) {
-        const program = Number(subtype.replace('program-budget-', ''));
-        if (!programSwitches.includes(program)) {
-          this.accessory.removeService(service);
-        }
+        this.accessory.removeService(service);
       }
-      if (subtype.startsWith('program-') && !subtype.startsWith('program-budget-')) {
+      if (subtype.startsWith('program-')
+        && !subtype.startsWith('program-budget-')
+        && !subtype.startsWith('program-fan-')
+        && !subtype.startsWith('program-light-')
+        && !subtype.startsWith('program-switch-')) {
         const program = Number(subtype.replace('program-', ''));
         if (!programSwitches.includes(program)) {
           this.accessory.removeService(service);
@@ -674,6 +726,27 @@ export class RainbirdAccessory {
       if (subtype.startsWith('zone-valve-')) {
         const zone = Number(subtype.replace('zone-valve-', ''));
         if (!zoneValves || !activeZones.includes(zone)) {
+          this.accessory.removeService(service);
+        }
+      }
+      if (subtype.startsWith('program-fan-')) {
+        const program = Number(subtype.replace('program-fan-', ''));
+        const uiType = this.accessory.context.programBudgetServiceType ?? 'fan';
+        if (!programBudgetPrograms.includes(program) || uiType !== 'fan') {
+          this.accessory.removeService(service);
+        }
+      }
+      if (subtype.startsWith('program-light-')) {
+        const program = Number(subtype.replace('program-light-', ''));
+        const uiType = this.accessory.context.programBudgetServiceType ?? 'fan';
+        if (!programBudgetPrograms.includes(program) || uiType !== 'light') {
+          this.accessory.removeService(service);
+        }
+      }
+      if (subtype.startsWith('program-switch-')) {
+        const program = Number(subtype.replace('program-switch-', ''));
+        const uiType = this.accessory.context.programBudgetServiceType ?? 'fan';
+        if (!programBudgetPrograms.includes(program) || uiType !== 'switch') {
           this.accessory.removeService(service);
         }
       }
@@ -744,7 +817,8 @@ export class RainbirdAccessory {
       return;
     }
 
-    const durationSeconds = this.remainingDuration > 0 ? this.remainingDuration : this.defaultDuration * 60;
+    const fallbackSeconds = this.zoneDefaultDurationSeconds ?? this.defaultDuration * 60;
+    const durationSeconds = this.remainingDuration > 0 ? this.remainingDuration : fallbackSeconds;
     const minutes = Math.max(1, Math.ceil(durationSeconds / 60));
     this.log.info(`Starting zone ${zone} for ${minutes} minute(s)`);
     if (this.accessory.context.stackRunRequests && this.activeZones.size > 0) {
@@ -765,12 +839,14 @@ export class RainbirdAccessory {
       await this.controller.stopIrrigation();
       return;
     }
-    this.log.info(`Starting zone ${zone} from zone switch for ${this.defaultDuration} minute(s)`);
+    const durationSeconds = this.adjustedZoneDurationsSeconds.get(zone) ?? this.defaultDuration * 60;
+    const durationMinutes = Math.max(1, Math.ceil(durationSeconds / 60));
+    this.log.info(`Starting zone ${zone} from zone switch for ${durationMinutes} minute(s)`);
     if (this.accessory.context.stackRunRequests && this.activeZones.size > 0) {
       this.log.info(`Stacking zone ${zone} from zone switch`);
-      await this.controller.stackZone(zone, this.defaultDuration);
+      await this.controller.stackZone(zone, durationMinutes);
     } else {
-      await this.controller.startZone(zone, this.defaultDuration);
+      await this.controller.startZone(zone, durationMinutes);
     }
   }
 
@@ -784,26 +860,54 @@ export class RainbirdAccessory {
   }
 
   private async getProgramBudget(program: number): Promise<number> {
-    const budget = await this.controller.getWaterBudget(program - 1);
     const found = this.programBudgetServices.find((entry) => entry.program === program);
+    if (found?.lastBudgetUpdate) {
+      return found.budget;
+    }
+    const budget = await this.controller.getWaterBudget(program - 1);
     if (found) {
       found.budget = budget;
-      const custom = RainbirdAccessory.getCustomTypes(this.platform);
-      found.service.updateCharacteristic(custom.ProgramBudgetCharacteristic, budget);
+      found.lastBudgetUpdate = Date.now();
+      if (found.service) {
+        const custom = RainbirdAccessory.getCustomTypes(this.platform);
+        found.service.updateCharacteristic(custom.ProgramBudgetCharacteristic, budget);
+      }
+      this.updateBudgetUi(found, budget);
     }
     return budget;
   }
 
   private async setProgramBudget(program: number, value: CharacteristicValue): Promise<void> {
-    const budget = Math.max(0, Math.min(300, Number(value)));
+    const budget = Math.max(0, Math.min(100, Number(value)));
     await this.controller.setWaterBudget(program - 1, budget);
     const found = this.programBudgetServices.find((entry) => entry.program === program);
     if (found) {
       found.budget = budget;
-      const custom = RainbirdAccessory.getCustomTypes(this.platform);
-      found.service.updateCharacteristic(custom.ProgramBudgetCharacteristic, budget);
+      found.lastBudgetUpdate = Date.now();
+      if (found.service) {
+        const custom = RainbirdAccessory.getCustomTypes(this.platform);
+        found.service.updateCharacteristic(custom.ProgramBudgetCharacteristic, budget);
+      }
+      this.updateBudgetUi(found, budget);
     }
     this.log.info(`Set Program ${String.fromCharCode(64 + program)} water budget to ${budget}%`);
+  }
+
+  updateProgramBudgets(budgets: Array<{ program: number; budget: number }>): void {
+    const custom = RainbirdAccessory.getCustomTypes(this.platform);
+    for (const entry of budgets) {
+      const found = this.programBudgetServices.find((service) => service.program === entry.program);
+      if (!found) {
+        continue;
+      }
+      found.budget = entry.budget;
+      found.lastBudgetUpdate = Date.now();
+      if (found.service) {
+        found.service.updateCharacteristic(custom.ProgramBudgetCharacteristic, entry.budget);
+      }
+      this.updateBudgetUi(found, entry.budget);
+    }
+    this.refreshAdjustedDurations();
   }
 
   updateProgramMetadata(
@@ -813,6 +917,10 @@ export class RainbirdAccessory {
       durations: Array<{ zone: number; durations: number[] }>;
     },
   ): void {
+    this.scheduleProgramInfo = schedule.programInfo ?? [];
+    this.scheduleProgramStartInfo = schedule.programStartInfo ?? [];
+    this.scheduleDurations = schedule.durations ?? [];
+
     const custom = RainbirdAccessory.getCustomTypes(this.platform);
     for (const programService of this.programBudgetServices) {
       const programZero = programService.program - 1;
@@ -826,9 +934,195 @@ export class RainbirdAccessory {
       programService.firstStartMinutes = Number(firstStart ?? 0);
       programService.runtimeMinutes = runtimeMinutes;
 
-      programService.service.updateCharacteristic(custom.ProgramRuntimeMinutesCharacteristic, runtimeMinutes);
-      programService.service.updateCharacteristic(custom.ProgramFirstStartCharacteristic, programService.firstStartMinutes);
-      programService.service.updateCharacteristic(custom.ProgramDaysMaskCharacteristic, programService.daysMask);
+      if (programService.service) {
+        programService.service.updateCharacteristic(custom.ProgramRuntimeMinutesCharacteristic, runtimeMinutes);
+        programService.service.updateCharacteristic(custom.ProgramFirstStartCharacteristic, programService.firstStartMinutes);
+        programService.service.updateCharacteristic(custom.ProgramDaysMaskCharacteristic, programService.daysMask);
+      }
+    }
+
+    this.refreshAdjustedDurations();
+  }
+
+  private refreshAdjustedDurations(): void {
+    if (this.scheduleDurations.length === 0) {
+      return;
+    }
+
+    const budgetByProgram = new Map<number, number>();
+    for (const service of this.programBudgetServices) {
+      const budget = service.lastBudgetUpdate ? service.budget : 100;
+      budgetByProgram.set(service.program, budget);
+    }
+
+    this.adjustedZoneDurationsSeconds.clear();
+    const now = new Date();
+
+    for (const entry of this.scheduleDurations) {
+      const next = this.findNextScheduledProgram(entry.zone, entry.durations, now);
+      if (!next || next.minutes <= 0) {
+        continue;
+      }
+      const budget = budgetByProgram.get(next.program) ?? 100;
+      const adjustedMinutes = Math.max(1, Math.round(next.minutes * (budget / 100)));
+      const adjustedSeconds = adjustedMinutes * 60;
+      this.adjustedZoneDurationsSeconds.set(next.zone, adjustedSeconds);
+      this.applyAdjustedDuration(next.zone, adjustedSeconds);
+    }
+  }
+
+  private findNextScheduledProgram(
+    zone: number,
+    zoneDurations: number[],
+    now: Date,
+  ): { zone: number; program: number; minutes: number; start: Date } | undefined {
+    let best: { zone: number; program: number; minutes: number; start: Date } | undefined;
+
+    for (const info of this.scheduleProgramInfo) {
+      const programZero = Number(info.program ?? -1);
+      if (programZero < 0) {
+        continue;
+      }
+      const minutes = Number(zoneDurations[programZero] ?? 0);
+      if (minutes <= 0) {
+        continue;
+      }
+      const startInfo = this.scheduleProgramStartInfo.find((entry) => Number(entry.program ?? -1) === programZero);
+      if (!this.isProgramEnabled(info, startInfo)) {
+        continue;
+      }
+      const nextStart = this.findNextProgramStart(info, startInfo, now);
+      if (!nextStart) {
+        continue;
+      }
+      const candidate = { zone, program: programZero + 1, minutes, start: nextStart };
+      if (!best || candidate.start.getTime() < best.start.getTime()) {
+        best = candidate;
+      }
+    }
+
+    return best;
+  }
+
+  private isProgramEnabled(programInfo: Record<string, number>, startInfo?: Record<string, number>): boolean {
+    if (!startInfo || !Array.isArray(startInfo.startTime)) {
+      return false;
+    }
+    const times = (startInfo.startTime as number[]).filter((value) => Number(value) !== 65535);
+    if (times.length === 0) {
+      return false;
+    }
+    if (Number(programInfo.permanentDaysOff ?? 0) > 0) {
+      return false;
+    }
+    const daysMask = Number(programInfo.daysOfWeekMask ?? 0);
+    const period = Number(programInfo.period ?? 0);
+    const frequency = Number(programInfo.frequency ?? 0);
+    return daysMask > 0 || period > 0 || frequency > 0;
+  }
+
+  private findNextProgramStart(
+    programInfo: Record<string, number>,
+    startInfo: Record<string, number> | undefined,
+    now: Date,
+  ): Date | undefined {
+    if (!startInfo || !Array.isArray(startInfo.startTime)) {
+      return undefined;
+    }
+    const startTimes = (startInfo.startTime as number[])
+      .filter((value) => Number(value) !== 65535)
+      .map((value) => Math.max(0, Math.min(1439, Number(value))))
+      .sort((a, b) => a - b);
+    if (startTimes.length === 0) {
+      return undefined;
+    }
+
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    const todayMidnight = new Date(now);
+    todayMidnight.setHours(0, 0, 0, 0);
+
+    for (let offset = 0; offset <= 14; offset++) {
+      const day = new Date(todayMidnight.getTime() + offset * 86400000);
+      if (!this.isProgramActiveOnDate(programInfo, day, offset)) {
+        continue;
+      }
+      for (const minutes of startTimes) {
+        if (offset === 0 && minutes <= nowMinutes) {
+          continue;
+        }
+        return new Date(day.getTime() + minutes * 60000);
+      }
+    }
+
+    return undefined;
+  }
+
+  private isProgramActiveOnDate(programInfo: Record<string, number>, date: Date, offsetFromToday: number): boolean {
+    const daysMask = Number(programInfo.daysOfWeekMask ?? 0);
+    const period = Number(programInfo.period ?? 0);
+    const frequency = Number(programInfo.frequency ?? 0);
+    const synchro = Number(programInfo.synchro ?? 0);
+
+    if (daysMask > 0) {
+      const dayIdx = date.getDay();
+      return ((daysMask >> dayIdx) & 1) === 1;
+    }
+
+    if (frequency > 0) {
+      if (offsetFromToday < synchro) {
+        return false;
+      }
+      return ((offsetFromToday - synchro) % frequency) === 0;
+    }
+
+    if (period === 1) {
+      return date.getDate() % 2 === 1;
+    }
+    if (period === 2) {
+      return date.getDate() % 2 === 0;
+    }
+
+    return false;
+  }
+
+  private updateBudgetUi(service: ProgramBudgetService, budget: number): void {
+    if (!service.uiService || !service.uiType) {
+      return;
+    }
+    if (service.uiType === 'fan') {
+      service.uiService.updateCharacteristic(this.platform.Characteristic.RotationSpeed, budget);
+      return;
+    }
+    if (service.uiType === 'light') {
+      service.uiService.updateCharacteristic(this.platform.Characteristic.Brightness, budget);
+      service.uiService.updateCharacteristic(this.platform.Characteristic.On, budget > 0);
+      return;
+    }
+    service.uiService.updateCharacteristic(this.platform.Characteristic.On, budget > 0);
+  }
+
+  private applyAdjustedDuration(zone: number, seconds: number): void {
+    if (!Number.isFinite(seconds) || seconds <= 0) {
+      return;
+    }
+
+    if (this.accessory.context.type === 'controller') {
+      const found = this.zoneValves.find((valve) => valve.zone === zone);
+      if (!found) {
+        return;
+      }
+      found.durationSeconds = seconds;
+      found.service.updateCharacteristic(this.platform.Characteristic.SetDuration, seconds);
+      return;
+    }
+
+    if (this.zone === zone && this.valveService) {
+      this.zoneDefaultDurationSeconds = seconds;
+      this.valveService.updateCharacteristic(this.platform.Characteristic.SetDuration, seconds);
+      if (!this.isActive) {
+        this.remainingDuration = seconds;
+        this.valveService.updateCharacteristic(this.platform.Characteristic.RemainingDuration, seconds);
+      }
     }
   }
 
