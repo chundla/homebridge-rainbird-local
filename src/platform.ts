@@ -1,4 +1,4 @@
-import type { API, Characteristic, DynamicPlatformPlugin, Logging, PlatformAccessory, Service } from 'homebridge';
+import type { API, Characteristic, DynamicPlatformPlugin, Logging, MatterAccessory, PlatformAccessory, Service } from 'homebridge';
 
 import { normalizeControllerConfig, type RainbirdControllerConfig, type RainbirdPlatformConfig } from './controllerConfig.js';
 import { createMatterZoneValveBridge } from './matterZoneValveBridge.js';
@@ -6,6 +6,7 @@ import { RainbirdAccessory } from './platformAccessory.js';
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings.js';
 import { RainbirdController } from './rainbird/rainbird.js';
 import { createZoneRuntime, type ZoneRuntime } from './zoneRuntime.js';
+import { getZoneDisplayName } from './zoneNames.js';
 
 type ControllerRuntime = {
   key: string;
@@ -70,6 +71,10 @@ export class RainbirdPlatform implements DynamicPlatformPlugin {
     this.log.info('Loading accessory from cache:', accessory.displayName);
     accessory.context.active = false;
     this.accessories.set(accessory.UUID, accessory);
+  }
+
+  configureMatterAccessory(accessory: MatterAccessory) {
+    this.matterZoneValveBridge.configureMatterAccessory(accessory);
   }
 
   private getConfiguredControllers(): RainbirdControllerConfig[] {
@@ -243,6 +248,7 @@ export class RainbirdPlatform implements DynamicPlatformPlugin {
         modelName: runtime.modelName,
         matterZoneValves: runtime.matterZoneValves,
         zones: runtime.zones,
+        zoneNames: runtime.zoneNames,
         zoneRuntime: runtime.zoneRuntime,
       });
     }
@@ -304,7 +310,7 @@ export class RainbirdPlatform implements DynamicPlatformPlugin {
 
   private registerZoneAccessories(runtime: ControllerRuntime): void {
     for (const zone of runtime.zones) {
-      const name = runtime.zoneNames[zone - 1] ?? `Zone ${zone}`;
+      const name = getZoneDisplayName(zone, runtime.zoneNames);
       const uuid = this.api.hap.uuid.generate(`${runtime.key}:${runtime.serial}-zone-${zone}`);
       const existing = this.accessories.get(uuid);
       const accessory = existing ?? new this.api.platformAccessory(`${runtime.name} ${name}`, uuid);

@@ -3,6 +3,7 @@ import type { Characteristic, CharacteristicValue, Logging, PlatformAccessory, S
 import type { RainbirdPlatform } from './platform.js';
 import type { RainbirdController } from './rainbird/rainbird.js';
 import type { ZoneRuntime } from './zoneRuntime.js';
+import { getZoneDisplayName, getZoneValveDisplayName } from './zoneNames.js';
 
 type ProgramSwitch = {
   service: Service;
@@ -556,7 +557,7 @@ export class RainbirdAccessory {
     const shouldExposeZoneSwitches = (this.accessory.context.zoneSwitches !== false) && !shouldExposeZoneValves;
     if (shouldExposeZoneSwitches) {
       for (const zone of this.zones) {
-        const name = this.accessory.context.zoneNames?.[zone - 1] ?? `Zone ${zone}`;
+        const name = getZoneDisplayName(zone, this.accessory.context.zoneNames);
         const subtype = `zone-switch-${zone}`;
         const service = this.accessory.getServiceById(this.platform.Service.Switch, subtype)
           || this.accessory.addService(this.platform.Service.Switch, name, subtype);
@@ -571,7 +572,7 @@ export class RainbirdAccessory {
 
     if (shouldExposeZoneValves) {
       for (const zone of this.zones) {
-        const name = `${this.accessory.context.zoneNames?.[zone - 1] ?? `Zone ${zone}`} Valve`;
+        const name = getZoneValveDisplayName(zone, this.accessory.context.zoneNames);
         const subtype = `zone-valve-${zone}`;
         const service = this.accessory.getServiceById(this.platform.Service.Valve, subtype)
           || this.accessory.addService(this.platform.Service.Valve, name, subtype);
