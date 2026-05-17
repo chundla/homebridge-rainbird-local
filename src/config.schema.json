@@ -60,6 +60,12 @@
         "default": true,
         "description": "Create HomeKit switches for each zone when using controller mode."
       },
+      "matterZoneValves": {
+        "title": "Enable Matter Zone Valves",
+        "type": "boolean",
+        "default": false,
+        "description": "Opt in to the future Matter WaterValve surface for this controller when the bridge has Matter enabled."
+      },
       "logScheduleOnStart": {
         "title": "Log Schedule on Start",
         "type": "boolean",

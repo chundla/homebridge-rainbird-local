@@ -1,36 +1,11 @@
-import type { API, Characteristic, DynamicPlatformPlugin, Logging, PlatformAccessory, PlatformConfig, Service } from 'homebridge';
+import type { API, Characteristic, DynamicPlatformPlugin, Logging, PlatformAccessory, Service } from 'homebridge';
 
+import { normalizeControllerConfig, type RainbirdControllerConfig, type RainbirdPlatformConfig } from './controllerConfig.js';
+import { createMatterZoneValveBridge } from './matterZoneValveBridge.js';
 import { RainbirdAccessory } from './platformAccessory.js';
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings.js';
 import { RainbirdController } from './rainbird/rainbird.js';
-
-export interface RainbirdControllerConfig {
-  configDevice?: string;
-  name?: string;
-  host: string;
-  password: string;
-  expose?: 'controller' | 'zones';
-  zoneNames?: string[];
-  ignoredZones?: number[];
-  defaultDurationMinutes?: number;
-  refreshIntervalSeconds?: number;
-  programSwitches?: boolean;
-  programSwitchList?: number[];
-  programBudgetServiceType?: 'fan' | 'light' | 'switch';
-  zoneSwitches?: boolean;
-  zoneValves?: boolean;
-  stackRunRequests?: boolean;
-  logScheduleOnStart?: boolean;
-  requestTimeoutMs?: number;
-  connectTimeoutMs?: number;
-}
-
-export interface RainbirdPlatformConfig extends PlatformConfig, RainbirdControllerConfig {
-  debug?: boolean;
-  devices?: RainbirdControllerConfig[];
-  additionalControllers?: RainbirdControllerConfig[];
-  controllers?: RainbirdControllerConfig[];
-}
+import { createZoneRuntime, type ZoneRuntime } from './zoneRuntime.js';
 
 type ControllerRuntime = {
   key: string;
@@ -54,6 +29,8 @@ type ControllerRuntime = {
   serial: string;
   modelName: string;
   zones: number[];
+  zoneRuntime: ZoneRuntime;
+  matterZoneValves: boolean;
   refreshTick: number;
   refreshInProgress: boolean;
   consecutiveRefreshFailures: number;
@@ -67,6 +44,7 @@ export class RainbirdPlatform implements DynamicPlatformPlugin {
   private readonly handlers: Map<string, RainbirdAccessory> = new Map();
   private readonly controllers: ControllerRuntime[] = [];
   private readonly refreshTimers: NodeJS.Timeout[] = [];
+  private readonly matterZoneValveBridge;
 
   constructor(
     public readonly log: Logging,
@@ -75,6 +53,7 @@ export class RainbirdPlatform implements DynamicPlatformPlugin {
   ) {
     this.Service = api.hap.Service;
     this.Characteristic = api.hap.Characteristic;
+    this.matterZoneValveBridge = createMatterZoneValveBridge(api, log);
 
     const configured = this.getConfiguredControllers();
     if (configured.length === 0) {
@@ -138,7 +117,7 @@ export class RainbirdPlatform implements DynamicPlatformPlugin {
     this.controllers.length = 0;
 
     for (let i = 0; i < configured.length; i++) {
-      const entry = configured[i];
+      const entry = normalizeControllerConfig(configured[i]);
       const host = String(entry.host ?? '').trim();
       const password = String(entry.password ?? '').trim();
       if (!host || !password) {
@@ -181,6 +160,8 @@ export class RainbirdPlatform implements DynamicPlatformPlugin {
         serial: host,
         modelName: 'Rain Bird Controller',
         zones: [],
+        zoneRuntime: createZoneRuntime([], entry.defaultDurationMinutes ?? this.config.defaultDurationMinutes ?? 10),
+        matterZoneValves: entry.matterZoneValves,
         refreshTick: 0,
         refreshInProgress: false,
         consecutiveRefreshFailures: 0,
@@ -203,6 +184,7 @@ export class RainbirdPlatform implements DynamicPlatformPlugin {
       runtime.zones = Array.from(stations.activeSet)
         .filter((zone) => !runtime.ignoredZones.has(zone))
         .sort((a, b) => a - b);
+      runtime.zoneRuntime = createZoneRuntime(runtime.zones, runtime.defaultDuration);
 
       this.log.info(
         `[${runtime.name}] Connected to ${runtime.modelName} (${runtime.serial}). `
@@ -254,6 +236,15 @@ export class RainbirdPlatform implements DynamicPlatformPlugin {
       } else {
         this.registerZoneAccessories(runtime);
       }
+
+      await this.matterZoneValveBridge.ensureController({
+        name: runtime.name,
+        serial: runtime.serial,
+        modelName: runtime.modelName,
+        matterZoneValves: runtime.matterZoneValves,
+        zones: runtime.zones,
+        zoneRuntime: runtime.zoneRuntime,
+      });
     }
 
     for (const [uuid, accessory] of this.accessories) {
@@ -299,7 +290,7 @@ export class RainbirdPlatform implements DynamicPlatformPlugin {
     accessory.context.model = runtime.modelName;
     accessory.context.active = true;
 
-    const handler = new RainbirdAccessory(this, accessory, runtime.controller, this.log);
+    const handler = new RainbirdAccessory(this, accessory, runtime.controller, runtime.zoneRuntime, this.log);
     this.handlers.set(uuid, handler);
 
     if (!existing) {
@@ -327,7 +318,7 @@ export class RainbirdPlatform implements DynamicPlatformPlugin {
       accessory.context.model = runtime.modelName;
       accessory.context.active = true;
 
-      const handler = new RainbirdAccessory(this, accessory, runtime.controller, this.log);
+      const handler = new RainbirdAccessory(this, accessory, runtime.controller, runtime.zoneRuntime, this.log);
       this.handlers.set(uuid, handler);
 
       if (!existing) {
@@ -402,6 +393,7 @@ export class RainbirdPlatform implements DynamicPlatformPlugin {
       const activeStationsRaw = await runtime.controller.getActiveStations();
       const activeStations = activeStationsRaw.filter((zone) => !runtime.ignoredZones.has(zone));
       const activeSet = new Set(activeStations);
+      runtime.zoneRuntime.setActiveZones(activeSet);
 
       let rainSensorActive: boolean | undefined;
       let rainDelayDays: number | undefined;

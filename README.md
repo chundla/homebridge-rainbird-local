@@ -124,6 +124,14 @@ npm link
 - Optional zone switches provide quick on/off per zone (auto-disabled when zone valves are enabled to avoid redundant tiles)
 - Optional zone valves provide native Apple Home valve tiles (Active/In Use/Set Duration)
 
+### Matter baseline
+
+- `matterZoneValves` is an explicit per-controller opt-in for the future Matter `WaterValve` surface.
+- Default is `false`.
+- In the current baseline scaffold, enabling `matterZoneValves` only wires the shared zone runtime/state model and the Matter registration boundary.
+- If Homebridge Matter is disabled at the bridge level, the plugin logs a clear skip message and leaves the existing HomeKit surface unchanged.
+- Actual per-zone Matter `WaterValve` publication and live control/state sync are not part of this baseline.
+
 ### Zone mode
 
 - Exposes each zone as HomeKit `Valve`
@@ -157,6 +165,7 @@ Tested successfully with:
 
 ```bash
 npm run lint
+npm test
 npm run build
 ```
 

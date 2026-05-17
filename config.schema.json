@@ -70,6 +70,12 @@
             },
             "zoneSwitches": { "title": "Expose Zone Switches", "type": "boolean", "default": true },
             "zoneValves": { "title": "Expose Zone Valves", "type": "boolean", "default": true },
+            "matterZoneValves": {
+              "title": "Enable Matter Zone Valves",
+              "type": "boolean",
+              "default": false,
+              "description": "Opt in to the future Matter WaterValve surface for this controller when the bridge has Matter enabled."
+            },
             "stackRunRequests": { "title": "Stack Run Requests", "type": "boolean", "default": false, "description": "Queue zone starts instead of interrupting active irrigation." },
             "logScheduleOnStart": { "title": "Log Schedule on Start", "type": "boolean", "default": false },
             "requestTimeoutMs": { "title": "Request Timeout (ms)", "type": "integer", "default": 15000, "minimum": 1000 },

@@ -29,6 +29,7 @@
     "build": "rimraf ./dist && tsc && cp -R src/resources dist/resources",
     "lint": "eslint . --max-warnings=0",
     "prepublishOnly": "npm run lint && npm run build",
+    "test": "npm run build && node --test test/**/*.test.js",
     "watch": "npm run build && npm link && nodemon"
   },
   "files": [
@@ -39,18 +40,18 @@
   ],
   "dependencies": {
     "homebridge-lib": "^7.3.2",
-    "undici": "^6.24.1",
-    "yaml": "^2.8.0"
+    "undici": "^6.25.0",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.1",
-    "@types/node": "^24.10.1",
-    "eslint": "^9.39.1",
-    "homebridge": "^2.0.0-beta.55",
+    "@eslint/js": "^9.39.4",
+    "@types/node": "^24.12.4",
+    "eslint": "^9.39.4",
+    "homebridge": "^2.0.2",
     "nodemon": "^3.1.11",
     "rimraf": "^6.1.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.46.4"
+    "typescript-eslint": "^8.59.3"
   }
 }

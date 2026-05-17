@@ -2,6 +2,7 @@ import type { Characteristic, CharacteristicValue, Logging, PlatformAccessory, S
 
 import type { RainbirdPlatform } from './platform.js';
 import type { RainbirdController } from './rainbird/rainbird.js';
+import type { ZoneRuntime } from './zoneRuntime.js';
 
 type ProgramSwitch = {
   service: Service;
@@ -26,7 +27,6 @@ type ZoneSwitch = {
 type ZoneValve = {
   zone: number;
   service: Service;
-  durationSeconds: number;
 };
 
 
@@ -284,7 +284,6 @@ export class RainbirdAccessory {
 
   private isActive = false;
   private remainingDuration = 0;
-  private activeZones = new Set<number>();
   private rainDelayDays = 0;
   private rainSensorActive = false;
   private queueNextZone = 0;
@@ -301,12 +300,12 @@ export class RainbirdAccessory {
   private scheduleProgramStartInfo: Array<Record<string, number>> = [];
   private scheduleDurations: Array<{ zone: number; durations: number[] }> = [];
   private adjustedZoneDurationsSeconds: Map<number, number> = new Map();
-  private zoneDefaultDurationSeconds?: number;
 
   constructor(
     private readonly platform: RainbirdPlatform,
     private readonly accessory: PlatformAccessory,
     private readonly controller: RainbirdController,
+    private readonly zoneRuntime: ZoneRuntime,
     private readonly log: Logging,
   ) {
     this.zone = this.accessory.context.zone;
@@ -337,7 +336,7 @@ export class RainbirdAccessory {
     currentZone?: number,
     currentRemainingRuntimeMinutes?: number,
   ): void {
-    this.activeZones = new Set(activeStations);
+    this.zoneRuntime.setActiveZones(activeStations);
     if (typeof rainSensorActive === 'boolean') {
       this.rainSensorActive = rainSensorActive;
     }
@@ -381,7 +380,6 @@ export class RainbirdAccessory {
     }
 
     this.isActive = irrigationOn;
-    this.activeZones = new Set(activeStations);
 
     this.irrigationService.updateCharacteristic(this.platform.Characteristic.Active, irrigationOn
       ? this.platform.Characteristic.Active.ACTIVE
@@ -432,7 +430,10 @@ export class RainbirdAccessory {
       zoneValve.service.updateCharacteristic(this.platform.Characteristic.InUse, active
         ? this.platform.Characteristic.InUse.IN_USE
         : this.platform.Characteristic.InUse.NOT_IN_USE);
-      zoneValve.service.updateCharacteristic(this.platform.Characteristic.RemainingDuration, active ? zoneValve.durationSeconds : 0);
+      zoneValve.service.updateCharacteristic(
+        this.platform.Characteristic.RemainingDuration,
+        active ? this.zoneRuntime.getZoneDurationSeconds(zoneValve.zone) : 0,
+      );
     }
   }
 
@@ -462,9 +463,9 @@ export class RainbirdAccessory {
     }
 
     const active = activeStations.has(zone);
-    const defaultSeconds = this.zoneDefaultDurationSeconds ?? this.defaultDuration * 60;
+    const durationSeconds = this.zoneRuntime.getZoneDurationSeconds(zone);
     this.isActive = active;
-    this.remainingDuration = active ? defaultSeconds : 0;
+    this.remainingDuration = active ? durationSeconds : 0;
 
     this.valveService.updateCharacteristic(this.platform.Characteristic.Active, active
       ? this.platform.Characteristic.Active.ACTIVE
@@ -561,7 +562,7 @@ export class RainbirdAccessory {
           || this.accessory.addService(this.platform.Service.Switch, name, subtype);
 
         service.getCharacteristic(this.platform.Characteristic.On)
-          .onGet(() => this.activeZones.has(zone))
+          .onGet(() => this.zoneRuntime.getZoneState(zone).active)
           .onSet(async (value) => this.setZoneSwitch(zone, value));
 
         this.zoneSwitches.push({ zone, service });
@@ -581,23 +582,23 @@ export class RainbirdAccessory {
           .setCharacteristic(this.platform.Characteristic.SetDuration, this.defaultDuration * 60);
 
         service.getCharacteristic(this.platform.Characteristic.Active)
-          .onGet(() => (this.activeZones.has(zone)
+          .onGet(() => (this.zoneRuntime.getZoneState(zone).active
             ? this.platform.Characteristic.Active.ACTIVE
             : this.platform.Characteristic.Active.INACTIVE))
           .onSet(async (value) => this.setZoneValveActive(zone, value));
 
         service.getCharacteristic(this.platform.Characteristic.InUse)
-          .onGet(() => (this.activeZones.has(zone)
+          .onGet(() => (this.zoneRuntime.getZoneState(zone).active
             ? this.platform.Characteristic.InUse.IN_USE
             : this.platform.Characteristic.InUse.NOT_IN_USE));
 
         service.getCharacteristic(this.platform.Characteristic.RemainingDuration)
-          .onGet(() => (this.activeZones.has(zone) ? (this.zoneValves.find((v) => v.zone === zone)?.durationSeconds ?? this.defaultDuration * 60) : 0));
+          .onGet(() => (this.zoneRuntime.getZoneState(zone).active ? this.zoneRuntime.getZoneDurationSeconds(zone) : 0));
 
         service.getCharacteristic(this.platform.Characteristic.SetDuration)
           .onSet((value) => this.setZoneValveDuration(zone, value));
 
-        this.zoneValves.push({ zone, service, durationSeconds: this.defaultDuration * 60 });
+        this.zoneValves.push({ zone, service });
       }
     }
 
@@ -783,7 +784,7 @@ export class RainbirdAccessory {
 
     this.valveService.getCharacteristic(this.platform.Characteristic.SetDuration)
       .onSet((value) => {
-        this.remainingDuration = Number(value);
+        this.zoneRuntime.setZoneDurationSeconds(zone, Number(value));
       });
   }
 
@@ -794,17 +795,19 @@ export class RainbirdAccessory {
       await this.controller.stopIrrigation();
       this.isActive = false;
       this.remainingDuration = 0;
-      this.activeZones.clear();
+      this.zoneRuntime.setActiveZones([]);
       return;
     }
 
     if (this.zones.length > 0) {
       const zone = this.zones[0];
-      this.log.info(`Starting irrigation from controller tile (Zone ${zone}, ${this.defaultDuration} min)`);
-      await this.controller.startZone(zone, this.defaultDuration);
+      const durationSeconds = this.zoneRuntime.getZoneDurationSeconds(zone);
+      const durationMinutes = Math.max(1, Math.ceil(durationSeconds / 60));
+      this.log.info(`Starting irrigation from controller tile (Zone ${zone}, ${durationMinutes} min)`);
+      await this.controller.startZone(zone, durationMinutes);
       this.isActive = true;
-      this.remainingDuration = this.defaultDuration * 60;
-      this.activeZones = new Set([zone]);
+      this.remainingDuration = durationSeconds;
+      this.zoneRuntime.setActiveZones([zone]);
       return;
     }
 
@@ -818,15 +821,14 @@ export class RainbirdAccessory {
       await this.controller.stopIrrigation();
       this.isActive = false;
       this.remainingDuration = 0;
-      this.activeZones.clear();
+      this.zoneRuntime.setActiveZones([]);
       return;
     }
 
-    const fallbackSeconds = this.zoneDefaultDurationSeconds ?? this.defaultDuration * 60;
-    const durationSeconds = this.remainingDuration > 0 ? this.remainingDuration : fallbackSeconds;
+    const durationSeconds = this.zoneRuntime.getZoneDurationSeconds(zone);
     const minutes = Math.max(1, Math.ceil(durationSeconds / 60));
     this.log.info(`Starting zone ${zone} for ${minutes} minute(s)`);
-    if (this.accessory.context.stackRunRequests && this.activeZones.size > 0) {
+    if (this.accessory.context.stackRunRequests && this.zoneRuntime.getActiveZones().length > 0) {
       this.log.info(`Stacking zone ${zone} behind active run`);
       await this.controller.stackZone(zone, minutes);
     } else {
@@ -834,7 +836,7 @@ export class RainbirdAccessory {
     }
     this.isActive = true;
     this.remainingDuration = durationSeconds;
-    this.activeZones = new Set([zone]);
+    this.zoneRuntime.setActiveZones([zone]);
   }
 
   private async setZoneSwitch(zone: number, value: CharacteristicValue): Promise<void> {
@@ -844,10 +846,10 @@ export class RainbirdAccessory {
       await this.controller.stopIrrigation();
       return;
     }
-    const durationSeconds = this.adjustedZoneDurationsSeconds.get(zone) ?? this.defaultDuration * 60;
+    const durationSeconds = this.zoneRuntime.getZoneDurationSeconds(zone);
     const durationMinutes = Math.max(1, Math.ceil(durationSeconds / 60));
     this.log.info(`Starting zone ${zone} from zone switch for ${durationMinutes} minute(s)`);
-    if (this.accessory.context.stackRunRequests && this.activeZones.size > 0) {
+    if (this.accessory.context.stackRunRequests && this.zoneRuntime.getActiveZones().length > 0) {
       this.log.info(`Stacking zone ${zone} from zone switch`);
       await this.controller.stackZone(zone, durationMinutes);
     } else {
@@ -1116,13 +1118,13 @@ export class RainbirdAccessory {
       if (!found) {
         return;
       }
-      found.durationSeconds = seconds;
+      this.zoneRuntime.setZoneDurationSeconds(zone, seconds);
       found.service.updateCharacteristic(this.platform.Characteristic.SetDuration, seconds);
       return;
     }
 
     if (this.zone === zone && this.valveService) {
-      this.zoneDefaultDurationSeconds = seconds;
+      this.zoneRuntime.setZoneDurationSeconds(zone, seconds);
       this.valveService.updateCharacteristic(this.platform.Characteristic.SetDuration, seconds);
       if (!this.isActive) {
         this.remainingDuration = seconds;
@@ -1136,8 +1138,9 @@ export class RainbirdAccessory {
     if (!found) {
       return;
     }
-    found.durationSeconds = Math.max(60, Number(value) || this.defaultDuration * 60);
-    this.log.debug(`Updated zone ${zone} valve duration to ${found.durationSeconds} second(s)`);
+    const durationSeconds = Math.max(60, Number(value) || this.defaultDuration * 60);
+    this.zoneRuntime.setZoneDurationSeconds(zone, durationSeconds);
+    this.log.debug(`Updated zone ${zone} valve duration to ${durationSeconds} second(s)`);
   }
 
   private async setZoneValveActive(zone: number, value: CharacteristicValue): Promise<void> {
@@ -1147,10 +1150,10 @@ export class RainbirdAccessory {
       await this.controller.stopIrrigation();
       return;
     }
-    const durationSeconds = this.zoneValves.find((v) => v.zone === zone)?.durationSeconds ?? this.defaultDuration * 60;
+    const durationSeconds = this.zoneRuntime.getZoneDurationSeconds(zone);
     const minutes = Math.max(1, Math.ceil(durationSeconds / 60));
     this.log.info(`Starting controller-zone valve ${zone} for ${minutes} minute(s)`);
-    if (this.accessory.context.stackRunRequests && this.activeZones.size > 0) {
+    if (this.accessory.context.stackRunRequests && this.zoneRuntime.getActiveZones().length > 0) {
       this.log.info(`Stacking controller-zone valve ${zone}`);
       await this.controller.stackZone(zone, minutes);
     } else {
@@ -1174,6 +1177,10 @@ export class RainbirdAccessory {
   }
 
   private getRemainingDuration(): number {
+    if (this.zone) {
+      const state = this.zoneRuntime.getZoneState(this.zone);
+      return state.active ? state.durationSeconds : 0;
+    }
     return this.remainingDuration;
   }
 }
