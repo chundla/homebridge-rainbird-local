@@ -173,6 +173,14 @@ npm run build
 
 ## Release notes
 
+### v0.3.0 (since v0.2.0)
+
+- Added explicit Matter \`WaterValve\` publication per zone behind \`matterZoneValves\`.
+- Wired Matter \`open\` / \`close\` control paths to the existing Rain Bird manual run/stop behavior.
+- Split shared zone runtime state so configured duration and live remaining duration stay in sync across HomeKit and Matter.
+- Pushed refreshed active state, target state, open duration, and remaining duration back into Matter accessories during polling.
+- Added repo-local agent docs for issue tracker and triage label conventions.
+
 ### v0.2.0 (since v0.1.0)
 
 - Fixed `WaterBudgetSet` command encoding/parsing (`sipcommands.yaml`) to send program + seasonal adjust fields correctly.
