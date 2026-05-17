@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 
 import { normalizeControllerConfig } from '../dist/controllerConfig.js';
 import { createMatterZoneValveBridge } from '../dist/matterZoneValveBridge.js';
+import { RainbirdPlatform } from '../dist/platform.js';
 import { createZoneRuntime } from '../dist/zoneRuntime.js';
 
 test('normalizeControllerConfig defaults Matter zone valves off', () => {
@@ -40,6 +41,7 @@ test('createZoneRuntime keeps shared duration and active state in one place', ()
     zone: 3,
     active: true,
     durationSeconds: 180,
+    remainingDurationSeconds: 180,
   });
   assert.equal(runtime.getZoneState(1).durationSeconds, 600);
 });
@@ -75,15 +77,20 @@ test('Matter zone valve bridge skips registration with a clear log when bridge M
 function createMatterApiDouble() {
   const registrations = [];
   const updates = [];
+  const stateUpdates = [];
   const unregistrations = [];
 
   return {
     registrations,
     updates,
+    stateUpdates,
     unregistrations,
     api: {
       isMatterEnabled: () => true,
       matter: {
+        clusterNames: {
+          ValveConfigurationAndControl: 'valveConfigurationAndControl',
+        },
         uuid: {
           generate: (value) => `uuid:${value}`,
         },
@@ -104,12 +111,22 @@ function createMatterApiDouble() {
         updatePlatformAccessories: async (accessories) => {
           updates.push(accessories);
         },
+        updateAccessoryState: async (uuid, cluster, attributes, partId) => {
+          stateUpdates.push({ uuid, cluster, attributes, partId });
+        },
         unregisterPlatformAccessories: async (plugin, platform, accessories) => {
           unregistrations.push({ plugin, platform, accessories });
         },
       },
     },
   };
+}
+
+function stripMatterAccessoryFunctions(accessory) {
+  const rest = { ...accessory };
+  delete rest.handlers;
+  delete rest.getState;
+  return rest;
 }
 
 test('Matter zone valve bridge publishes one WaterValve per active filtered zone with stable IDs and zone valve names', async () => {
@@ -139,7 +156,10 @@ test('Matter zone valve bridge publishes one WaterValve per active filtered zone
 
   assert.equal(result, 'ready');
   assert.equal(matter.registrations.length, 1);
-  assert.deepEqual(matter.registrations[0], {
+  assert.deepEqual({
+    ...matter.registrations[0],
+    accessories: matter.registrations[0].accessories.map(stripMatterAccessoryFunctions),
+  }, {
     plugin: 'homebridge-rainbird-local',
     platform: 'RainBirdLocal',
     accessories: [
@@ -231,7 +251,10 @@ test('Matter zone valve bridge reuses cached per-zone IDs across restart and rem
   });
 
   assert.equal(result, 'ready');
-  assert.deepEqual(matter.registrations, [
+  assert.deepEqual(matter.registrations.map((entry) => ({
+    ...entry,
+    accessories: entry.accessories.map(stripMatterAccessoryFunctions),
+  })), [
     {
       plugin: 'homebridge-rainbird-local',
       platform: 'RainBirdLocal',
@@ -261,7 +284,7 @@ test('Matter zone valve bridge reuses cached per-zone IDs across restart and rem
       ],
     },
   ]);
-  assert.deepEqual(matter.updates, [[
+  assert.deepEqual(matter.updates.map((accessories) => accessories.map(stripMatterAccessoryFunctions)), [[
     {
       UUID: 'uuid:rainbird-matter-zone-valve:RB-1:1',
       displayName: 'Back Yard Front Lawn Valve',
@@ -349,6 +372,206 @@ test('Matter zone valve bridge removes cached valves when a controller no longer
           },
         },
       ],
+    },
+  ]);
+});
+
+test('Matter zone valve bridge wires WaterValve open and close commands through the shared zone runtime', async () => {
+  const matter = createMatterApiDouble();
+  const bridge = createMatterZoneValveBridge(
+    matter.api,
+    {
+      warn: () => undefined,
+      info: () => undefined,
+    },
+  );
+
+  const runtime = createZoneRuntime([1], 10);
+  const commands = [];
+
+  await bridge.ensureController({
+    name: 'Front Yard',
+    serial: 'RB-9',
+    modelName: 'ESP-TM2',
+    matterZoneValves: true,
+    zones: [1],
+    zoneNames: ['Beds'],
+    zoneRuntime: runtime,
+    controller: {
+      startZone: async (zone, minutes) => {
+        commands.push({ type: 'start', zone, minutes });
+      },
+      stackZone: async (zone, minutes) => {
+        commands.push({ type: 'stack', zone, minutes });
+      },
+      stopIrrigation: async () => {
+        commands.push({ type: 'stop' });
+      },
+    },
+    stackRunRequests: false,
+  });
+
+  const accessory = matter.registrations[0].accessories[0];
+
+  await accessory.handlers.valveConfigurationAndControl.open({ openDuration: 180 });
+
+  assert.deepEqual(commands, [
+    { type: 'start', zone: 1, minutes: 3 },
+  ]);
+  assert.deepEqual(runtime.getZoneState(1), {
+    zone: 1,
+    active: true,
+    durationSeconds: 180,
+    remainingDurationSeconds: 180,
+  });
+  assert.equal(await accessory.getState('valveConfigurationAndControl', 'defaultOpenDuration'), 180);
+  assert.equal(await accessory.getState('valveConfigurationAndControl', 'openDuration'), 180);
+  assert.equal(await accessory.getState('valveConfigurationAndControl', 'remainingDuration'), 180);
+  assert.equal(await accessory.getState('valveConfigurationAndControl', 'currentState'), 1);
+
+  await accessory.handlers.valveConfigurationAndControl.close();
+
+  assert.deepEqual(commands, [
+    { type: 'start', zone: 1, minutes: 3 },
+    { type: 'stop' },
+  ]);
+  assert.deepEqual(runtime.getZoneState(1), {
+    zone: 1,
+    active: false,
+    durationSeconds: 180,
+    remainingDurationSeconds: 0,
+  });
+  assert.equal(await accessory.getState('valveConfigurationAndControl', 'remainingDuration'), 0);
+  assert.equal(await accessory.getState('valveConfigurationAndControl', 'currentState'), 0);
+});
+
+test('Matter zone valve bridge pushes refreshed active state and remaining duration into published Matter accessories', async () => {
+  const matter = createMatterApiDouble();
+  const bridge = createMatterZoneValveBridge(
+    matter.api,
+    {
+      warn: () => undefined,
+      info: () => undefined,
+    },
+  );
+
+  const runtime = createZoneRuntime([1, 3], 10);
+  runtime.setZoneDurationSeconds(1, 240);
+  runtime.setZoneDurationSeconds(3, 480);
+
+  await bridge.ensureController({
+    name: 'Back Yard',
+    serial: 'RB-1',
+    modelName: 'ESP-ME3',
+    matterZoneValves: true,
+    zones: [1, 3],
+    zoneNames: ['Front Lawn', 'Back Lawn', 'Side Beds'],
+    zoneRuntime: runtime,
+  });
+
+  runtime.setActiveZones([3]);
+  runtime.setZoneRemainingDurationSeconds(3, 125);
+
+  await bridge.syncControllerState({
+    name: 'Back Yard',
+    serial: 'RB-1',
+    modelName: 'ESP-ME3',
+    matterZoneValves: true,
+    zones: [1, 3],
+    zoneNames: ['Front Lawn', 'Back Lawn', 'Side Beds'],
+    zoneRuntime: runtime,
+  });
+
+  assert.deepEqual(matter.stateUpdates, [
+    {
+      uuid: 'uuid:rainbird-matter-zone-valve:RB-1:1',
+      cluster: 'valveConfigurationAndControl',
+      attributes: {
+        currentState: 0,
+        targetState: 0,
+        defaultOpenDuration: 240,
+        openDuration: 240,
+        remainingDuration: 0,
+      },
+      partId: undefined,
+    },
+    {
+      uuid: 'uuid:rainbird-matter-zone-valve:RB-1:3',
+      cluster: 'valveConfigurationAndControl',
+      attributes: {
+        currentState: 1,
+        targetState: 1,
+        defaultOpenDuration: 480,
+        openDuration: 480,
+        remainingDuration: 125,
+      },
+      partId: undefined,
+    },
+  ]);
+});
+
+test('RainbirdPlatform refreshStatus pushes queue-backed remaining duration into Matter zone valves', async () => {
+  const runtime = {
+    key: '192.0.2.10#0',
+    name: 'Back Yard',
+    ignoredZones: new Set(),
+    controller: {
+      getActiveStations: async () => [3],
+      getRainSensorState: async () => false,
+      getRainDelay: async () => 0,
+      getCurrentQueue: async () => ({
+        currentProgram: { zone: 3, seconds: 125 },
+        zones: [],
+      }),
+    },
+    zoneRuntime: createZoneRuntime([3], 10),
+    refreshTick: 0,
+    refreshInProgress: false,
+    consecutiveRefreshFailures: 0,
+    programSwitches: [],
+    lastQueueSignature: undefined,
+    serial: 'RB-1',
+    modelName: 'ESP-ME3',
+    matterZoneValves: true,
+    zones: [3],
+    zoneNames: ['Side Beds'],
+  };
+
+  const syncCalls = [];
+  const fakePlatform = {
+    log: {
+      debug: () => undefined,
+      info: () => undefined,
+      warn: () => undefined,
+      error: () => undefined,
+    },
+    accessories: new Map(),
+    handlers: new Map(),
+    api: {
+      hap: {
+        uuid: {
+          generate: (value) => value,
+        },
+      },
+    },
+    matterZoneValveBridge: {
+      syncControllerState: async (controller) => {
+        syncCalls.push({
+          active: controller.zoneRuntime.getZoneState(3).active,
+          remainingDurationSeconds: controller.zoneRuntime.getZoneRemainingDurationSeconds(3),
+        });
+      },
+    },
+    logProgramMetadata: () => undefined,
+  };
+
+  await RainbirdPlatform.prototype.refreshStatus.call(fakePlatform, runtime);
+
+  assert.equal(runtime.zoneRuntime.getZoneRemainingDurationSeconds(3), 125);
+  assert.deepEqual(syncCalls, [
+    {
+      active: true,
+      remainingDurationSeconds: 125,
     },
   ]);
 });

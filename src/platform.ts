@@ -250,6 +250,8 @@ export class RainbirdPlatform implements DynamicPlatformPlugin {
         zones: runtime.zones,
         zoneNames: runtime.zoneNames,
         zoneRuntime: runtime.zoneRuntime,
+        controller: runtime.controller,
+        stackRunRequests: runtime.stackRunRequests,
       });
     }
 
@@ -418,6 +420,10 @@ export class RainbirdPlatform implements DynamicPlatformPlugin {
       const nextQueueZone = Number(queue.zones[0]?.zone ?? 0);
       const nextQueueRuntimeMinutes = Math.max(0, Math.ceil(Number(queue.zones[0]?.seconds ?? 0) / 60));
       const currentQueueZone = Number((queue.currentProgram as Record<string, unknown> | undefined)?.zone ?? 0);
+      const currentQueueRuntimeSeconds = Math.max(
+        0,
+        Math.ceil(Number((queue.currentProgram as Record<string, unknown> | undefined)?.seconds ?? 0)),
+      );
       const currentQueueRuntimeMinutes = Math.max(
         0,
         Math.ceil(Number((queue.currentProgram as Record<string, unknown> | undefined)?.seconds ?? 0) / 60),
@@ -432,6 +438,20 @@ export class RainbirdPlatform implements DynamicPlatformPlugin {
 
       runtime.refreshTick += 1;
       runtime.consecutiveRefreshFailures = 0;
+
+      for (const zone of runtime.zones) {
+        if (!activeSet.has(zone)) {
+          runtime.zoneRuntime.setZoneRemainingDurationSeconds(zone, 0);
+          continue;
+        }
+
+        if (zone === currentQueueZone && currentQueueRuntimeSeconds > 0) {
+          runtime.zoneRuntime.setZoneRemainingDurationSeconds(zone, currentQueueRuntimeSeconds);
+          continue;
+        }
+
+        runtime.zoneRuntime.setZoneRemainingDurationSeconds(zone, runtime.zoneRuntime.getZoneDurationSeconds(zone));
+      }
 
       let scheduleSnapshot: Awaited<ReturnType<RainbirdController['getSchedule']>> | undefined;
       if (runtime.programSwitches.length > 0 && runtime.refreshTick % 20 === 1) {
@@ -486,6 +506,18 @@ export class RainbirdPlatform implements DynamicPlatformPlugin {
           handler.updateProgramMetadata(scheduleSnapshot);
         }
       }
+
+      await this.matterZoneValveBridge.syncControllerState({
+        name: runtime.name,
+        serial: runtime.serial,
+        modelName: runtime.modelName,
+        matterZoneValves: runtime.matterZoneValves,
+        zones: runtime.zones,
+        zoneNames: runtime.zoneNames,
+        zoneRuntime: runtime.zoneRuntime,
+        controller: runtime.controller,
+        stackRunRequests: runtime.stackRunRequests,
+      });
     } catch (err) {
       runtime.consecutiveRefreshFailures += 1;
       this.log.warn(`[${runtime.name}] Refresh failed (${runtime.consecutiveRefreshFailures}):`, err);

@@ -6,7 +6,7 @@ This file provides guidance to agents when working with code in this repository.
 
 - **Build command copies resources**: `npm run build` includes `cp -R src/resources dist/resources` - YAML resource files must be copied to dist/
 - **Watch mode**: `npm run watch` builds, links globally, and runs nodemon for live development
-- **No test suite**: Project has no test commands defined
+- **Test suite**: `npm test` rebuilds the plugin and runs the Node test suite in `test/**/*.test.js`
 
 ## Code Style (Non-Standard)
 
@@ -29,3 +29,17 @@ This file provides guidance to agents when working with code in this repository.
 - **Zone indexing**: Zones are 1-based in API but 0-based in some internal structures - careful with conversions
 - **Program numbers**: Programs A-D are 1-4 in config but 0-3 in API calls (subtract 1 before API calls)
 - **Stack vs Start**: `stackRunRequests` config determines whether to queue zones or interrupt active irrigation
+
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs are tracked in GitHub Issues for this repo (use `gh` from this clone). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Using the default triage label vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout expected (`CONTEXT.md` + `docs/adr/` at repo root). See `docs/agents/domain.md`.

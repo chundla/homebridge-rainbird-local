@@ -124,13 +124,15 @@ npm link
 - Optional zone switches provide quick on/off per zone (auto-disabled when zone valves are enabled to avoid redundant tiles)
 - Optional zone valves provide native Apple Home valve tiles (Active/In Use/Set Duration)
 
-### Matter baseline
+### Matter zone valves
 
-- `matterZoneValves` is an explicit per-controller opt-in for the future Matter `WaterValve` surface.
+- `matterZoneValves` is an explicit per-controller opt-in for per-zone Matter `WaterValve` accessories.
 - Default is `false`.
-- In the current baseline scaffold, enabling `matterZoneValves` only wires the shared zone runtime/state model and the Matter registration boundary.
 - If Homebridge Matter is disabled at the bridge level, the plugin logs a clear skip message and leaves the existing HomeKit surface unchanged.
-- Actual per-zone Matter `WaterValve` publication and live control/state sync are not part of this baseline.
+- Each active filtered zone is published as its own Matter `WaterValve` accessory with a stable controller-serial + zone-number identity.
+- Matter `open` and `close` commands reuse the same Rain Bird manual run/stop paths as the HomeKit valve surface.
+- Zone duration changes stay in the shared runtime, so HomeKit and Matter read the same configured duration.
+- Polling pushes active state and remaining duration back into the Matter accessories using the queue/runtime snapshot.
 
 ### Zone mode
 

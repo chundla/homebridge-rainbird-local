@@ -12,6 +12,12 @@ export interface MatterZoneValveController {
   zones: number[];
   zoneNames: string[];
   zoneRuntime: ZoneRuntime;
+  controller?: {
+    startZone(zone: number, minutes: number): Promise<void>;
+    stackZone(zone: number, minutes: number): Promise<void>;
+    stopIrrigation(): Promise<void>;
+  };
+  stackRunRequests?: boolean;
 }
 
 export interface MatterZoneValveAccessoryContext {
@@ -37,12 +43,21 @@ type MatterBridgeLike = Pick<API, 'isMatterEnabled'> & {
         };
       };
     };
+    clusterNames?: {
+      ValveConfigurationAndControl?: string;
+    };
     registerPlatformAccessories(
       pluginIdentifier: string,
       platformName: string,
       accessories: MatterZoneValveAccessory[],
     ): Promise<void>;
     updatePlatformAccessories(accessories: MatterZoneValveAccessory[]): Promise<void>;
+    updateAccessoryState?(
+      uuid: string,
+      cluster: string,
+      attributes: Record<string, unknown>,
+      partId?: string,
+    ): Promise<void>;
     unregisterPlatformAccessories(
       pluginIdentifier: string,
       platformName: string,
@@ -57,6 +72,7 @@ export type MatterZoneValveBridgeResult = 'disabled' | 'skipped' | 'ready';
 export interface MatterZoneValveBridge {
   configureMatterAccessory(accessory: MatterZoneValveCachedAccessory): void;
   ensureController(controller: MatterZoneValveController): Promise<MatterZoneValveBridgeResult>;
+  syncControllerState(controller: MatterZoneValveController): Promise<void>;
 }
 
 function isMatterZoneValveAccessoryContext(context: unknown): context is MatterZoneValveAccessoryContext {
@@ -136,6 +152,33 @@ class HomebridgeMatterZoneValveBridge implements MatterZoneValveBridge {
     return 'ready';
   }
 
+  async syncControllerState(controller: MatterZoneValveController): Promise<void> {
+    if (!controller.matterZoneValves || !this.api.isMatterEnabled() || !this.api.matter?.updateAccessoryState) {
+      return;
+    }
+
+    const clusterName = this.api.matter.clusterNames?.ValveConfigurationAndControl ?? 'valveConfigurationAndControl';
+    for (const zone of controller.zones) {
+      const accessory = this.controllerAccessories.get(controller.serial)?.get(zone);
+      if (!accessory) {
+        continue;
+      }
+      const valveState = controller.zoneRuntime.getZoneState(zone);
+      const state = this.api.matter.types.ValveConfigurationAndControl.ValveState;
+      await this.api.matter.updateAccessoryState(
+        accessory.UUID,
+        clusterName,
+        {
+          currentState: valveState.active ? state.Open : state.Closed,
+          targetState: valveState.active ? state.Open : state.Closed,
+          defaultOpenDuration: valveState.durationSeconds,
+          openDuration: valveState.durationSeconds,
+          remainingDuration: valveState.active ? valveState.remainingDurationSeconds : 0,
+        },
+      );
+    }
+  }
+
   private buildAccessory(controller: MatterZoneValveController, zone: number): MatterZoneValveAccessory {
     const valveState = controller.zoneRuntime.getZoneState(zone);
     const matter = this.api.matter!;
@@ -153,16 +196,72 @@ class HomebridgeMatterZoneValveBridge implements MatterZoneValveBridge {
         controllerSerial: controller.serial,
         zone,
       },
+      handlers: {
+        valveConfigurationAndControl: {
+          open: async (request) => this.openZoneValve(controller, zone, request?.openDuration),
+          close: async () => this.closeZoneValve(controller),
+        },
+      },
+      getState: (_cluster, attribute) => this.getValveStateAttribute(controller, zone, attribute),
       clusters: {
         valveConfigurationAndControl: {
           currentState: valveState.active ? state.Open : state.Closed,
           targetState: valveState.active ? state.Open : state.Closed,
           defaultOpenDuration: valveState.durationSeconds,
           openDuration: valveState.durationSeconds,
-          remainingDuration: valveState.active ? valveState.durationSeconds : 0,
+          remainingDuration: valveState.active ? valveState.remainingDurationSeconds : 0,
         },
       },
     };
+  }
+
+  private async openZoneValve(controller: MatterZoneValveController, zone: number, requestedDurationSeconds?: number | null): Promise<void> {
+    if (!controller.controller) {
+      throw new Error(`No controller command path available for Matter zone valve ${zone}`);
+    }
+
+    if (typeof requestedDurationSeconds === 'number' && Number.isFinite(requestedDurationSeconds) && requestedDurationSeconds > 0) {
+      controller.zoneRuntime.setZoneDurationSeconds(zone, requestedDurationSeconds);
+    }
+
+    const durationSeconds = controller.zoneRuntime.getZoneDurationSeconds(zone);
+    const minutes = Math.max(1, Math.ceil(durationSeconds / 60));
+    const hasActiveRun = controller.zoneRuntime.getActiveZones().length > 0;
+
+    if (controller.stackRunRequests && hasActiveRun) {
+      await controller.controller.stackZone(zone, minutes);
+    } else {
+      await controller.controller.startZone(zone, minutes);
+    }
+
+    controller.zoneRuntime.setActiveZones([zone]);
+    controller.zoneRuntime.setZoneRemainingDurationSeconds(zone, durationSeconds);
+  }
+
+  private async closeZoneValve(controller: MatterZoneValveController): Promise<void> {
+    if (!controller.controller) {
+      throw new Error('No controller command path available for Matter zone valve');
+    }
+
+    await controller.controller.stopIrrigation();
+    controller.zoneRuntime.setActiveZones([]);
+  }
+
+  private getValveStateAttribute(controller: MatterZoneValveController, zone: number, attribute: string): number | null | undefined {
+    const valveState = controller.zoneRuntime.getZoneState(zone);
+    const state = this.api.matter?.types.ValveConfigurationAndControl.ValveState;
+    switch (attribute) {
+    case 'currentState':
+    case 'targetState':
+      return valveState.active ? state?.Open : state?.Closed;
+    case 'defaultOpenDuration':
+    case 'openDuration':
+      return valveState.durationSeconds;
+    case 'remainingDuration':
+      return valveState.active ? valveState.remainingDurationSeconds : 0;
+    default:
+      return undefined;
+    }
   }
 
   private async unregisterMissingZones(controllerSerial: string, desiredZones: Set<number>): Promise<void> {
