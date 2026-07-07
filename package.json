@@ -2,7 +2,7 @@
   "name": "homebridge-rainbird-local",
   "displayName": "Rain Bird",
   "type": "module",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Local Rain Bird controller plugin with HTTPS fallback for 2.x firmware",
   "author": "chundla",
   "license": "MIT",
@@ -28,8 +28,8 @@
   "scripts": {
     "build": "rimraf ./dist && tsc && cp -R src/resources dist/resources",
     "lint": "eslint . --max-warnings=0",
-    "prepublishOnly": "npm run lint && npm run build",
-    "test": "npm run build && node --test test/**/*.test.js",
+    "prepublishOnly": "npm run lint && npm test",
+    "test": "npm run build && node --test test/controllerConfig.test.js test/resources-build.test.js",
     "watch": "npm run build && npm link && nodemon"
   },
   "files": [
@@ -40,18 +40,18 @@
   ],
   "dependencies": {
     "homebridge-lib": "^7.3.2",
-    "undici": "^6.25.0",
+    "undici": "^6.27.0",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
-    "@types/node": "^24.12.4",
+    "@types/node": "^24.13.2",
     "eslint": "^9.39.4",
-    "homebridge": "^2.0.2",
+    "homebridge": "^2.1.0",
     "nodemon": "^3.1.11",
     "rimraf": "^6.1.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.59.3"
+    "typescript-eslint": "^8.63.0"
   }
 }

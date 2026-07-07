@@ -12,9 +12,10 @@ Homebridge plugin for **local** Rain Bird controller control (LNK WiFi module), 
 - Water budget read/write for configured programs
 - Program budget HomeKit UI type selector: `fan`, `light`, or `switch` (one service type per enabled program)
 - Health watchdog marks accessories as faulted after repeated refresh failures
-- Two expose modes:
+- Two HomeKit expose modes:
   - `controller`: one Irrigation System accessory (+ optional program switches, zone switches, and zone valves)
   - `zones`: one Valve accessory per zone
+- Optional **Matter** per-zone `WaterValve` accessories (`matterZoneValves`, default off) when the bridge has Matter enabled
 
 ## Local Control Requirement (Important)
 
@@ -171,24 +172,25 @@ npm test
 npm run build
 ```
 
-## Release notes
+Domain vocabulary and architecture decisions: [`CONTEXT.md`](CONTEXT.md) and [`docs/adr/`](docs/adr/).
 
-### v0.2.0 (since v0.1.0)
+## Changelog
 
-- Fixed `WaterBudgetSet` command encoding/parsing (`sipcommands.yaml`) to send program + seasonal adjust fields correctly.
-- Added reliable program water budget read/write control path.
-- Added configurable program budget service UI type (`programBudgetServiceType`: `fan` | `light` | `switch`).
-- Budget service count now follows enabled programs from `programSwitchList` (or defaults to A-D when list is unset and program switches are enabled).
-- Added request/connect timeout settings for Rain Bird transport and passed these through controller creation.
-- Improved transport resilience with explicit request abort timeout handling and stronger HTTPS→HTTP fallback conditions.
+See [`CHANGELOG.md`](CHANGELOG.md) for version history. Current release: **v0.2.1**.
+
+### Recent highlights
+
+**v0.2.1** — Matter zone valves (opt-in), shared zone runtime sync, Homebridge 2 Matter bridge, CI/test and dependency hardening.
+
+**v0.2.0** — Water budget fixes, configurable budget UI type, request/connect timeouts, transport resilience.
 
 ## Project status
 
 Current implementation includes:
 
-- Rain Bird client + crypto + SIP command port
-- HTTPS fallback controller creation
-- Model/stations/schedule read paths
-- Manual zone/program/stop commands
-- Homebridge platform discovery + polling + accessory handler wiring
-- Controller + zone accessory implementation in `src/platformAccessory.ts`
+- Rain Bird client + crypto + SIP command port (`src/rainbird/`)
+- HTTPS fallback controller creation and serialized command queue
+- Model/stations/schedule read paths; manual zone/program/stop and stack-run
+- Homebridge platform discovery, polling, health watchdog (`src/platform.ts`)
+- HomeKit controller + zone accessories (`src/platformAccessory.ts`)
+- Matter `WaterValve` bridge (`src/matterZoneValveBridge.ts`)
