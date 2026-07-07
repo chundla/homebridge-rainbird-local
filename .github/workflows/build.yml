@@ -20,7 +20,7 @@ jobs:
           node-version: ${{ matrix.node-version }}
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Lint the project
         run: npm run lint
@@ -28,10 +28,11 @@ jobs:
       - name: Build the project
         run: npm run build
 
-      - name: List, audit, fix outdated dependencies and build again
-        run: |
-          npm list --outdated
-          npm audit || true  # ignore failures
-          npm audit fix || true
-          npm list --outdated
-          npm run build
+      - name: Test (includes dist/resources copy check)
+        run: npm test
+
+      - name: Dependency audit (production tree)
+        run: npm audit --omit=dev
+
+      - name: Report outdated packages
+        run: npm outdated || true

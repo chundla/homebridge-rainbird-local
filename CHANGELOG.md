@@ -10,10 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `CONTEXT.md` and `docs/adr/` (architecture decision records) for domain vocabulary and stable design notes.
+- CI runs `npm test` on push/PR; `test/resources-build.test.js` asserts `dist/resources` matches `src/resources`.
+- Scheduled monthly dependency review workflow (`npm audit` on prod deps, outdated report artifact).
 
 ### Changed
 
 - Dependency maintenance: `undici` ^6.27.0 (security), `typescript-eslint`, `homebridge` (dev), `@types/node`.
+- CI uses `npm ci`, drops non-failing `npm audit fix` loop; production `npm audit` fails the main build job on vulnerabilities.
+- `prepublishOnly` runs full `npm test` instead of lint + build only.
 
 ## [0.2.1-beta.0] - 2026-05-17
 

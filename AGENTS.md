@@ -6,7 +6,9 @@ This file provides guidance to agents when working with code in this repository.
 
 - **Build command copies resources**: `npm run build` includes `cp -R src/resources dist/resources` - YAML resource files must be copied to dist/
 - **Watch mode**: `npm run watch` builds, links globally, and runs nodemon for live development
-- **Test suite**: `npm test` rebuilds the plugin and runs the Node test suite in `test/**/*.test.js`
+- **Test suite**: `npm test` rebuilds the plugin and runs the Node test suite in `test/**/*.test.js` (also runs in CI on push/PR)
+- **YAML in dist**: After editing `src/resources/*.yaml`, run `npm run build`; `test/resources-build.test.js` fails if `dist/resources` is missing or out of sync
+- **Dependency review**: Monthly scheduled workflow `.github/workflows/dependency-review.yml` runs `npm audit` (prod) and uploads `npm outdated` when packages are behind
 
 ## Code Style (Non-Standard)
 
