@@ -29,7 +29,7 @@
     "build": "rimraf ./dist && tsc && cp -R src/resources dist/resources",
     "lint": "eslint . --max-warnings=0",
     "prepublishOnly": "npm run lint && npm test",
-    "test": "npm run build && node --test test",
+    "test": "npm run build && node --test test/controllerConfig.test.js test/resources-build.test.js",
     "watch": "npm run build && npm link && nodemon"
   },
   "files": [
