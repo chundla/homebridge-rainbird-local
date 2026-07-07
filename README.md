@@ -176,11 +176,11 @@ Domain vocabulary and architecture decisions: [`CONTEXT.md`](CONTEXT.md) and [`d
 
 ## Changelog
 
-See [`CHANGELOG.md`](CHANGELOG.md) for version history. Current release: **v0.2.1-beta.0**.
+See [`CHANGELOG.md`](CHANGELOG.md) for version history. Current release: **v0.2.1**.
 
 ### Recent highlights
 
-**v0.2.1-beta.0** — Matter zone valves (opt-in), shared zone runtime sync, Homebridge 2 Matter bridge.
+**v0.2.1** — Matter zone valves (opt-in), shared zone runtime sync, Homebridge 2 Matter bridge, CI/test and dependency hardening.
 
 **v0.2.0** — Water budget fixes, configurable budget UI type, request/connect timeouts, transport resilience.
 

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-07
+
+Stable release of Matter zone valves and post-beta maintenance.
+
 ### Added
 
 - `CONTEXT.md` and `docs/adr/` (architecture decision records) for domain vocabulary and stable design notes.
@@ -18,6 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dependency maintenance: `undici` ^6.27.0 (security), `typescript-eslint`, `homebridge` (dev), `@types/node`.
 - CI uses `npm ci`, drops non-failing `npm audit fix` loop; production `npm audit` fails the main build job on vulnerabilities.
 - `prepublishOnly` runs full `npm test` instead of lint + build only.
+
+### Included from 0.2.1-beta.0
+
+- Opt-in **Matter zone valves** per controller (`matterZoneValves`, default off): one Matter `WaterValve` per active zone when Homebridge Matter is enabled.
+- Matter open/close and duration handling via shared `ZoneRuntime` and the same manual run/stop SIP paths as HomeKit valves.
+- Polling sync of active state and remaining duration into Matter accessories from queue/runtime snapshots.
+- Stable Matter accessory identity from controller serial + zone number; stale zones unregistered on rediscovery.
+- Homebridge 2 baseline for Matter APIs (`configureMatterAccessory`, Matter bridge registration).
 
 ## [0.2.1-beta.0] - 2026-05-17
 
@@ -57,7 +69,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - HTTPS-first controller creation with HTTP fallback.
 - HomeKit platform with controller and per-zone expose modes, polling, queue status service, manual zone/program control.
 
-[Unreleased]: https://github.com/chundla/homebridge-rainbird-local/compare/v0.2.1-beta.0...HEAD
+[Unreleased]: https://github.com/chundla/homebridge-rainbird-local/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/chundla/homebridge-rainbird-local/compare/v0.2.1-beta.0...v0.2.1
 [0.2.1-beta.0]: https://github.com/chundla/homebridge-rainbird-local/compare/v0.2.0...v0.2.1-beta.0
 [0.2.0]: https://github.com/chundla/homebridge-rainbird-local/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/chundla/homebridge-rainbird-local/releases/tag/v0.1.0
